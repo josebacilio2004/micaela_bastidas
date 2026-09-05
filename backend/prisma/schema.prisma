@@ -1,0 +1,492 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RoleType {
+  ADMINISTRADOR
+  TESORERA
+  SERVICIOS_HIGIENICOS
+  CONSULTA
+}
+
+enum MerchantTypeEnum {
+  SOCIO
+  AMBULANTE_FIJO
+  AMBULANTE_TEMPORAL
+}
+
+enum MerchantStatus {
+  ACTIVO
+  INACTIVO
+  SUSPENDIDO
+}
+
+enum StallStatus {
+  LIBRE
+  OCUPADO
+  RESERVADO
+  INACTIVO
+}
+
+enum Periodicity {
+  DIARIO
+  MENSUAL
+  POR_USO
+}
+
+enum ObligationStatus {
+  PENDIENTE
+  PAGADO
+  VENCIDO
+  ANULADO
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  YAPE
+  PLIN
+  TRANSFERENCIA
+}
+
+enum CashRegisterStatus {
+  ABIERTO
+  CERRADO
+  REABIERTO
+  ANULADO
+}
+
+enum CashMovementType {
+  INGRESO
+  EGRESO
+}
+
+enum SessionStatus {
+  ABIERTO
+  CERRADO
+}
+
+enum TicketStatus {
+  EMITIDO
+  VERIFICADO
+  DISCREPANCIA
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT
+  CLOSE
+  REOPEN
+  EXPORT
+}
+
+model User {
+  id               String      @id @default(uuid())
+  username         String      @unique
+  email            String?     @unique
+  passwordHash     String
+  fullName         String
+  phone            String?
+  isActive         Boolean     @default(true)
+  refreshTokenHash String?
+  roles            UserRole[]
+
+  openedRegisters   CashRegister[]           @relation("OpenedByUser")
+  closedRegisters   CashRegister[]           @relation("ClosedByUser")
+  reopenedRegisters CashRegister[]           @relation("ReopenedByUser")
+  cashMovements     CashMovement[]
+  collectedPayments Payment[]                @relation("CollectedByUser")
+  sanitarySessions  SanitaryServiceSession[]
+  auditLogs         AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        RoleType   @unique
+  description String?
+  users       UserRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model MerchantType {
+  id          String           @id @default(uuid())
+  code        MerchantTypeEnum @unique
+  name        String
+  description String?
+  merchants   Merchant[]
+  rates       Rate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("merchant_types")
+}
+
+model Sector {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  name        String
+  description String?
+  stalls      MarketStall[]
+  merchants   Merchant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sectors")
+}
+
+model MarketStall {
+  id                  String      @id @default(uuid())
+  code                String      @unique
+  sectorId            String
+  sector              Sector      @relation(fields: [sectorId], references: [id])
+  locationDescription String?
+  status              StallStatus @default(LIBRE)
+  assignedMerchant    Merchant?   @relation("StallMerchant")
+  assignedAt          DateTime?
+  observations        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("market_stalls")
+}
+
+model Merchant {
+  id               String         @id @default(uuid())
+  internalCode     String         @unique
+  firstName        String
+  lastName         String
+  dni              String         @unique
+  phone            String?
+  address          String?
+  merchantTypeId   String
+  merchantType     MerchantType   @relation(fields: [merchantTypeId], references: [id])
+  sectorId         String?
+  sector           Sector?        @relation(fields: [sectorId], references: [id])
+  stallId          String?        @unique
+  stall            MarketStall?   @relation("StallMerchant", fields: [stallId], references: [id])
+  businessCategory String?
+  entryDate        DateTime       @default(now())
+  status           MerchantStatus @default(ACTIVO)
+  isDeleted        Boolean        @default(false)
+  photoUrl         String?
+  observations     String?
+
+  createdById String?
+  updatedById String?
+
+  obligations PaymentObligation[]
+  payments    Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dni])
+  @@index([internalCode])
+  @@index([status])
+  @@index([isDeleted])
+  @@map("merchants")
+}
+
+model PaymentConcept {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  name        String
+  description String?
+  periodicity Periodicity   @default(MENSUAL)
+  isActive    Boolean       @default(true)
+  rates       Rate[]
+  obligations PaymentObligation[]
+  payments    Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_concepts")
+}
+
+model Rate {
+  id             String        @id @default(uuid())
+  conceptId      String
+  concept        PaymentConcept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  merchantTypeId String?
+  merchantType   MerchantType?  @relation(fields: [merchantTypeId], references: [id])
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("PEN")
+  startDate      DateTime      @default(now())
+  endDate        DateTime?
+  isActive       Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([conceptId, merchantTypeId, isActive])
+  @@map("rates")
+}
+
+model PaymentObligation {
+  id          String           @id @default(uuid())
+  merchantId  String
+  merchant    Merchant         @relation(fields: [merchantId], references: [id])
+  conceptId   String
+  concept     PaymentConcept   @relation(fields: [conceptId], references: [id])
+  period      String
+  year        Int
+  month       Int?
+  day         Int?
+  dueDate     DateTime
+  amount      Decimal          @db.Decimal(10, 2)
+  status      ObligationStatus @default(PENDIENTE)
+  paidAt      DateTime?
+  payment     Payment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchantId, conceptId, period])
+  @@index([merchantId, status])
+  @@index([period, status])
+  @@map("payment_obligations")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  operationNumber String        @unique
+  merchantId      String?
+  merchant        Merchant?     @relation(fields: [merchantId], references: [id])
+  conceptId       String
+  concept         PaymentConcept @relation(fields: [conceptId], references: [id])
+  obligationId    String?       @unique
+  obligation      PaymentObligation? @relation(fields: [obligationId], references: [id])
+  amount          Decimal       @db.Decimal(10, 2)
+  period          String
+  paymentMethod   PaymentMethod @default(EFECTIVO)
+  cashRegisterId  String?
+  cashRegister    CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  collectedById   String
+  collectedBy     User          @relation("CollectedByUser", fields: [collectedById], references: [id])
+  idempotencyKey  String?       @unique
+  notes           String?
+  paidAt          DateTime      @default(now())
+  isVoided        Boolean       @default(false)
+  voidedReason    String?
+  voidedAt        DateTime?
+  voidedById      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([operationNumber])
+  @@index([paidAt])
+  @@index([merchantId])
+  @@index([conceptId])
+  @@index([cashRegisterId])
+  @@map("payments")
+}
+
+model CashRegister {
+  id                   String             @id @default(uuid())
+  name                 String
+  openedById           String
+  openedBy             User               @relation("OpenedByUser", fields: [openedById], references: [id])
+  openingAmount        Decimal            @db.Decimal(10, 2)
+  openedAt             DateTime           @default(now())
+  closedById           String?
+  closedBy             User?              @relation("ClosedByUser", fields: [closedById], references: [id])
+  closedAt             DateTime?
+  expectedCash         Decimal?           @db.Decimal(10, 2)
+  countedCash          Decimal?           @db.Decimal(10, 2)
+  difference           Decimal?           @db.Decimal(10, 2)
+  closingObservations  String?
+  status               CashRegisterStatus @default(ABIERTO)
+  reopenReason         String?
+  reopenedById         String?
+  reopenedBy           User?              @relation("ReopenedByUser", fields: [reopenedById], references: [id])
+  reopenedAt           DateTime?
+
+  payments             Payment[]
+  movements            CashMovement[]
+  sanitarySessions     SanitaryServiceSession[]
+  dailyClosings        DailyClosing[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([openedAt])
+  @@map("cash_registers")
+}
+
+model CashMovement {
+  id             String           @id @default(uuid())
+  cashRegisterId String
+  cashRegister   CashRegister     @relation(fields: [cashRegisterId], references: [id])
+  type           CashMovementType
+  concept        String
+  amount         Decimal          @db.Decimal(10, 2)
+  reference      String?
+  userId         String
+  user           User             @relation(fields: [userId], references: [id])
+  createdAt      DateTime         @default(now())
+
+  @@index([cashRegisterId])
+  @@map("cash_movements")
+}
+
+model SanitaryServiceSession {
+  id                   String        @id @default(uuid())
+  operatorId           String
+  operator             User          @relation(fields: [operatorId], references: [id])
+  cashRegisterId       String?
+  cashRegister         CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  startTime            DateTime      @default(now())
+  endTime              DateTime?
+  urinalCount          Int           @default(0)
+  urinalPrice          Decimal       @default(0.50) @db.Decimal(10, 2)
+  urinalTotal          Decimal       @default(0.00) @db.Decimal(10, 2)
+  toiletCount          Int           @default(0)
+  toiletPrice          Decimal       @default(1.00) @db.Decimal(10, 2)
+  toiletTotal          Decimal       @default(0.00) @db.Decimal(10, 2)
+  totalCollected       Decimal       @default(0.00) @db.Decimal(10, 2)
+  initialTicketNumber  Int?
+  finalTicketNumber    Int?
+  declaredTicketCount  Int?
+  calculatedTicketCount Int?
+  ticketDiscrepancy    Int           @default(0)
+  discrepancyReason    String?
+  status               SessionStatus @default(ABIERTO)
+  notes                String?
+
+  tickets              Ticket[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([operatorId])
+  @@index([status])
+  @@index([startTime])
+  @@map("sanitary_service_sessions")
+}
+
+model Ticket {
+  id          String                 @id @default(uuid())
+  sessionId   String
+  session     SanitaryServiceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  startNumber Int
+  endNumber   Int
+  totalIssued Int
+  unitPrice   Decimal                @db.Decimal(10, 2)
+  totalAmount Decimal                @db.Decimal(10, 2)
+  status      TicketStatus           @default(EMITIDO)
+
+  createdAt DateTime @default(now())
+
+  @@map("tickets")
+}
+
+model DailyClosing {
+  id                 String        @id @default(uuid())
+  closingDate        DateTime      @db.Date
+  cashRegisterId     String?
+  cashRegister       CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  totalCollected     Decimal       @db.Decimal(10, 2)
+  alcabalaTotal      Decimal       @db.Decimal(10, 2)
+  waterTotal         Decimal       @db.Decimal(10, 2)
+  sanitaryTotal      Decimal       @db.Decimal(10, 2)
+  otherTotal         Decimal       @db.Decimal(10, 2)
+  operationsCount    Int
+  sanitaryUsersCount Int
+  expectedCash       Decimal       @db.Decimal(10, 2)
+  countedCash        Decimal       @db.Decimal(10, 2)
+  difference         Decimal       @db.Decimal(10, 2)
+  notes              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([closingDate])
+  @@map("daily_closings")
+}
+
+model MonthlyClosing {
+  id                 String   @id @default(uuid())
+  year               Int
+  month              Int
+  totalExpected      Decimal  @db.Decimal(10, 2)
+  totalCollected     Decimal  @db.Decimal(10, 2)
+  totalPending       Decimal  @db.Decimal(10, 2)
+  collectionRate     Decimal  @db.Decimal(5, 2)
+  alcabalaTotal      Decimal  @db.Decimal(10, 2)
+  waterTotal         Decimal  @db.Decimal(10, 2)
+  sanitaryTotal      Decimal  @db.Decimal(10, 2)
+  merchantsCount     Int
+  paidCount          Int
+  defaultersCount    Int
+  notes              String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year, month])
+  @@map("monthly_closings")
+}
+
+model AuditLog {
+  id             String      @id @default(uuid())
+  userId         String?
+  user           User?       @relation(fields: [userId], references: [id])
+  action         AuditAction
+  module         String
+  entityName     String
+  entityId       String?
+  previousValues Json?
+  newValues      Json?
+  ipAddress      String?
+  userAgent      String?
+  timestamp      DateTime    @default(now())
+
+  @@index([module])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}

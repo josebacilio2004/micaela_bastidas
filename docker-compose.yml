@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: micaela_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-micaela_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-MicaelaSeguro2026!}
+      POSTGRES_DB: ${POSTGRES_DB:-micaela_bastidas}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - micaela_bastidas_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-micaela_admin} -d ${POSTGRES_DB:-micaela_bastidas}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: micaela_backend
+    restart: always
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-micaela_admin}:${POSTGRES_PASSWORD:-MicaelaSeguro2026!}@postgres:5432/${POSTGRES_DB:-micaela_bastidas}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-jwt_super_secret_micaela_bastidas_production_key_2026_auth}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-jwt_refresh_super_secret_micaela_bastidas_key_2026_auth}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - micaela_bastidas_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: micaela_web
+    restart: always
+    environment:
+      PORT: 3001
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
+    depends_on:
+      - backend
+    networks:
+      - micaela_bastidas_network
+
+  nginx:
+    image: nginx:alpine
+    container_name: micaela_nginx
+    restart: always
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - web
+    networks:
+      - micaela_bastidas_network
+
+networks:
+  micaela_bastidas_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
