@@ -48,6 +48,8 @@ class _CobrarScreenState extends State<CobrarScreen> {
       _selectedMerchant = merchant;
       _selectedObligation = null;
       _obligations = [];
+      _searchResults = [];
+      _searchController.text = '${merchant['lastName']}, ${merchant['firstName']}';
     });
 
     try {
@@ -63,14 +65,124 @@ class _CobrarScreenState extends State<CobrarScreen> {
         _obligations = [
           {
             'id': 'off-ob-1',
-            'concept': {'id': 'alcabala-id', 'name': 'Alcabala'},
+            'concept': {'id': 'alcabala-id', 'name': 'Alcabala Diaria'},
             'period': '2026-09',
             'amount': merchant['merchantType']?['code'] == 'SOCIO' ? 10.00 : 3.00,
+          },
+          {
+            'id': 'off-ob-2',
+            'concept': {'id': 'agua-id', 'name': 'Cuota Agua'},
+            'period': '2026-09',
+            'amount': 5.00,
           },
         ];
         _selectedObligation = _obligations.first;
       });
     }
+  }
+
+  Future<void> _processQrCode(String rawCode) async {
+    final code = rawCode.trim();
+    if (code.isEmpty) return;
+
+    // 1. Buscar en SQLite local
+    Map<String, dynamic>? merchant = await LocalDatabase.instance.findMerchantByQr(code);
+
+    // 2. Si no está en SQLite, consultar API
+    if (merchant == null) {
+      try {
+        final res = await ApiClient().dio.get('/merchants/qr/${Uri.encodeComponent(code)}');
+        if (res.data != null) {
+          merchant = {
+            'id': res.data['id'],
+            'internalCode': res.data['internalCode'],
+            'firstName': res.data['firstName'],
+            'lastName': res.data['lastName'],
+            'dni': res.data['dni'],
+            'merchantType': {'name': res.data['merchantType']?['name'] ?? 'Socio'},
+            'stall': res.data['stall'],
+            'businessCategory': res.data['businessCategory'],
+            'qrCode': res.data['qrCode'],
+          };
+        }
+      } catch (_) {}
+    }
+
+    if (merchant != null) {
+      _selectMerchant(merchant);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppTheme.primary,
+            content: Text('Comerciante identificado por QR: ${merchant['lastName']}, ${merchant['firstName']}'),
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text('Código QR no corresponde a ningún comerciante activo en el padrón.'),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showQrScanDialog() {
+    final qrInputCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: const [
+            Icon(Icons.qr_code_scanner, color: AppTheme.primary),
+            SizedBox(width: 8),
+            Text('Escanear QR de Comerciante', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Apunte la cámara a la credencial del comerciante o ingrese el código/DNI:',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: qrInputCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Código QR o DNI (ej: MB-QR-10000001)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.qr_code),
+              ),
+              onSubmitted: (val) {
+                Navigator.pop(ctx);
+                _processQrCode(val);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _processQrCode(qrInputCtrl.text);
+            },
+            child: const Text('Identificar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmPayment() async {
@@ -105,10 +217,11 @@ class _CobrarScreenState extends State<CobrarScreen> {
         );
       }
     } catch (e) {
+      // 100% OFFLINE-FIRST: Guardar en cola SQLite
       await LocalDatabase.instance.insertOfflinePayment({
         'idempotency_key': idempotencyKey,
         'merchant_id': _selectedMerchant!['id'],
-        'merchant_name': '${_selectedMerchant!['lastName']} ${_selectedMerchant!['firstName']}',
+        'merchant_name': '${_selectedMerchant!['lastName']}, ${_selectedMerchant!['firstName']}',
         'concept_id': _selectedObligation!['concept']['id'],
         'concept_name': _selectedObligation!['concept']['name'],
         'obligation_id': _selectedObligation!['id'],
@@ -145,14 +258,33 @@ class _CobrarScreenState extends State<CobrarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('REGISTRAR COBRO')),
+      appBar: AppBar(title: const Text('REGISTRAR COBRO', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Botón de Escaneo Rápido QR
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
+                ),
+                icon: const Icon(Icons.qr_code_scanner, color: Colors.white, size: 22),
+                label: const Text(
+                  'COBRO RÁPIDO CON QR',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.8),
+                ),
+                onPressed: _showQrScanDialog,
+              ),
+            ),
+
             const Text(
-              '1. BUSCAR COMERCIANTE',
+              '1. BUSCAR EN PADRÓN O ESCANEAR CREDENCIAL',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
             ),
             const SizedBox(height: 6),
@@ -160,8 +292,13 @@ class _CobrarScreenState extends State<CobrarScreen> {
               controller: _searchController,
               onChanged: _search,
               decoration: InputDecoration(
-                hintText: 'DNI, Apellidos o Puesto...',
+                hintText: 'DNI, Apellidos, Puesto o Código...',
                 prefixIcon: const Icon(Icons.search, color: AppTheme.primary),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code, color: AppTheme.primary),
+                  tooltip: 'Escanear QR',
+                  onPressed: _showQrScanDialog,
+                ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                 filled: true,
                 fillColor: Colors.white,
@@ -178,26 +315,32 @@ class _CobrarScreenState extends State<CobrarScreen> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
                 ),
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: _searchResults.length,
-                  separatorBuilder: (ctx, idx) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final m = _searchResults[index];
-                    final stall = m['stall']?['code'] ?? m['stall_code'] ?? 'Ambulatorio';
-                    final name = m['lastName'] != null
-                        ? '${m['lastName']}, ${m['firstName']}'
-                        : '${m['last_name']}, ${m['first_name']}';
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, idx) {
+                    final m = _searchResults[idx];
+                    final stall = m['stall']?['code'] ?? m['stall_code'] ?? 'Ambulante';
+                    final type = m['merchantType']?['name'] ?? m['type_name'] ?? 'Socio';
                     return ListTile(
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      subtitle: Text('DNI: ${m['dni']} | Puesto: $stall', style: const TextStyle(fontSize: 11)),
-                      trailing: const Icon(Icons.chevron_right, color: AppTheme.primary),
-                      onTap: () {
-                        _searchController.clear();
-                        _searchResults = [];
-                        _selectMerchant(m);
-                      },
+                      dense: true,
+                      leading: CircleAvatar(
+                        backgroundColor: AppTheme.primary.withOpacity(0.1),
+                        child: Text(
+                          (m['firstName'] ?? m['first_name'] ?? 'C')[0],
+                          style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      title: Text(
+                        '${m['lastName'] ?? m['last_name']}, ${m['firstName'] ?? m['first_name']}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      subtitle: Text('DNI: ${m['dni']} • Puesto: $stall ($type)', style: const TextStyle(fontSize: 11)),
+                      trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+                      onTap: () => _selectMerchant(m),
                     );
                   },
                 ),
@@ -206,43 +349,45 @@ class _CobrarScreenState extends State<CobrarScreen> {
 
             const SizedBox(height: 20),
 
+            // Comerciante Seleccionado
             if (_selectedMerchant != null) ...[
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.green.shade50,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+                  border: Border.all(color: Colors.green.shade200),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${_selectedMerchant!['lastName']}, ${_selectedMerchant!['firstName']}',
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: AppTheme.primaryDark),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(color: AppTheme.primary, borderRadius: BorderRadius.circular(6)),
-                          child: Text(
-                            _selectedMerchant!['stall']?['code'] ?? 'Ambulatorio',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
-                          ),
-                        ),
-                      ],
+                    const CircleAvatar(
+                      backgroundColor: AppTheme.primary,
+                      radius: 20,
+                      child: Icon(Icons.check, color: Colors.white, size: 20),
                     ),
-                    const SizedBox(height: 4),
-                    Text('DNI: ${_selectedMerchant!['dni']}', style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${_selectedMerchant!['lastName'] ?? _selectedMerchant!['last_name']}, ${_selectedMerchant!['firstName'] ?? _selectedMerchant!['first_name']}',
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: Color(0xFF1E293B)),
+                          ),
+                          Text(
+                            'DNI: ${_selectedMerchant!['dni']} • Puesto: ${_selectedMerchant!['stall']?['code'] ?? _selectedMerchant!['stall_code'] ?? 'Ambulante'}',
+                            style: const TextStyle(fontSize: 11, color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 20),
 
               const Text(
-                '2. OBLIGACIÓN PENDIENTE',
+                '2. SELECCIONAR CONCEPTO / CUOTA PENDIENTE',
                 style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
               ),
               const SizedBox(height: 8),
@@ -250,48 +395,80 @@ class _CobrarScreenState extends State<CobrarScreen> {
               if (_obligations.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                  child: const Text('Sin obligaciones pendientes.', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: const Center(
+                    child: Text('Sin cuotas pendientes registradas.', style: TextStyle(fontSize: 12, color: Colors.black45)),
+                  ),
                 )
               else
-                ..._obligations.map((ob) {
-                  final isSelected = _selectedObligation?['id'] == ob['id'];
-                  return InkWell(
-                    onTap: () => setState(() => _selectedObligation = ob),
-                    child: Container(
+                Column(
+                  children: _obligations.map((ob) {
+                    final isSelected = _selectedObligation?['id'] == ob['id'];
+                    final amount = ob['amount'] is num ? ob['amount'] : (double.tryParse(ob['amount'].toString()) ?? 0.0);
+
+                    return Container(
                       margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: isSelected ? Colors.white : Colors.grey.shade50,
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedObligation = ob),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: isSelected ? AppTheme.primary : Colors.grey.shade300, width: isSelected ? 2 : 1),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.green.shade50 : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected ? AppTheme.primary : Colors.grey.shade200,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(ob['concept']?['name'] ?? 'Alcabala', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              Text('Período: ${ob['period']}', style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    ob['concept']?['name'] ?? 'Alcabala',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  Text('Período: ${ob['period']}', style: const TextStyle(fontSize: 11, color: Colors.black45)),
+                                ],
+                              ),
+                              Text(
+                                'S/ ${amount.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                  color: isSelected ? AppTheme.primary : Colors.black87,
+                                ),
+                              ),
                             ],
                           ),
-                          Text('S/ ${(ob['amount'] as num).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppTheme.primary)),
-                        ],
+                        ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  }).toList(),
+                ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
 
+              // Botón de Confirmación
               ElevatedButton(
-                onPressed: (_selectedObligation == null || _isSubmitting) ? null : _confirmPayment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: _isSubmitting || _selectedObligation == null ? null : _confirmPayment,
                 child: _isSubmitting
-                    ? const CircularProgressIndicator(color: Colors.white)
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : Text(
-                        'CONFIRMAR COBRO: S/ ${_selectedObligation != null ? (_selectedObligation!['amount'] as num).toStringAsFixed(2) : '0.00'}',
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+                        'CONFIRMAR COBRO (S/ ${(_selectedObligation?['amount'] ?? 0).toString()})',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                       ),
               ),
             ],

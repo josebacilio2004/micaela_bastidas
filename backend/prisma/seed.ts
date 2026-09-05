@@ -302,6 +302,7 @@ async function main() {
       update: {},
       create: {
         internalCode: m.internalCode,
+        qrCode: 'MB-QR-' + m.internalCode,
         firstName: m.firstName,
         lastName: m.lastName,
         dni: m.dni,
@@ -507,6 +508,91 @@ async function main() {
     });
   }
   console.log('✓ Configuraciones del sistema guardadas');
+  
+  // 14. Dispositivos Autorizados (Móviles)
+  const tesoreraDev = await prisma.device.upsert({
+    where: { deviceId: 'DEV-ANDROID-TESORERIA-01' },
+    update: {},
+    create: {
+      deviceId: 'DEV-ANDROID-TESORERIA-01',
+      name: 'Tablet Samsung Galaxy - Tesorería',
+      userId: tesoreraUser.id,
+      os: 'Android 14',
+      appVersion: '1.2.0',
+      lastSyncAt: new Date(),
+    },
+  });
+
+  const sshhDev = await prisma.device.upsert({
+    where: { deviceId: 'DEV-ANDROID-SSHH-01' },
+    update: {},
+    create: {
+      deviceId: 'DEV-ANDROID-SSHH-01',
+      name: 'Móvil Android - Operador SSHH',
+      userId: createdUsers['sshh_operador'].id,
+      os: 'Android 13',
+      appVersion: '1.2.0',
+      lastSyncAt: new Date(),
+    },
+  });
+  console.log('✓ Dispositivos móviles registrados');
+
+  // 15. Reuniones y Asistencia
+  const meeting = await prisma.meeting.upsert({
+    where: { id: 'meeting-asamblea-sep-2026' },
+    update: {},
+    create: {
+      id: 'meeting-asamblea-sep-2026',
+      title: 'Asamblea General Ordinaria de Socios - Septiembre 2026',
+      date: new Date('2026-09-04'),
+      time: '18:00',
+      location: 'Auditorio Central del Mercado',
+      description: 'Aprobación de balances, informe de recaudación y mantenimiento de techos',
+      status: 'EN_CURSO',
+      createdById: createdUsers['admin'].id,
+    },
+  });
+
+  // Asistencias iniciales de Juan Pérez y Rosa Gutiérrez
+  await prisma.attendanceEvent.upsert({
+    where: {
+      meetingId_merchantId: {
+        meetingId: meeting.id,
+        merchantId: createdMerchants['MB-COM-00001'].id,
+      },
+    },
+    update: {},
+    create: {
+      meetingId: meeting.id,
+      merchantId: createdMerchants['MB-COM-00001'].id,
+      dni: '45891234',
+      deviceId: tesoreraDev.deviceId,
+      registeredById: tesoreraUser.id,
+      idempotencyKey: 'att-juan-perez-sep2026',
+      scannedAt: new Date('2026-09-04T18:05:00Z'),
+    },
+  });
+
+  await prisma.attendanceEvent.upsert({
+    where: {
+      meetingId_merchantId: {
+        meetingId: meeting.id,
+        merchantId: createdMerchants['MB-COM-00002'].id,
+      },
+    },
+    update: {},
+    create: {
+      meetingId: meeting.id,
+      merchantId: createdMerchants['MB-COM-00002'].id,
+      dni: '41235678',
+      deviceId: tesoreraDev.deviceId,
+      registeredById: tesoreraUser.id,
+      idempotencyKey: 'att-rosa-gutierrez-sep2026',
+      scannedAt: new Date('2026-09-04T18:12:00Z'),
+    },
+  });
+  console.log('✓ Asamblea General y Asistencias iniciales configuradas');
+
   console.log('--- SEED COMPLETADO SATISFACTORIAMENTE ---');
 }
 

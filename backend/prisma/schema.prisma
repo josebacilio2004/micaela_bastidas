@@ -86,6 +86,20 @@ enum AuditAction {
   CLOSE
   REOPEN
   EXPORT
+  SYNC
+  ATTENDANCE
+}
+
+enum MeetingStatus {
+  PROGRAMADA
+  EN_CURSO
+  FINALIZADA
+  CANCELADA
+}
+
+enum DeviceStatus {
+  ACTIVO
+  BLOQUEADO
 }
 
 model User {
@@ -106,6 +120,9 @@ model User {
   collectedPayments Payment[]                @relation("CollectedByUser")
   sanitarySessions  SanitaryServiceSession[]
   auditLogs         AuditLog[]
+  devices           Device[]
+  registeredAttendances AttendanceEvent[]
+  createdMeetings   Meeting[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -200,6 +217,7 @@ model Merchant {
   status           MerchantStatus @default(ACTIVO)
   isDeleted        Boolean        @default(false)
   photoUrl         String?
+  qrCode           String         @unique
   observations     String?
 
   createdById String?
@@ -207,12 +225,14 @@ model Merchant {
 
   obligations PaymentObligation[]
   payments    Payment[]
+  attendances AttendanceEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([dni])
   @@index([internalCode])
+  @@index([qrCode])
   @@index([status])
   @@index([isDeleted])
   @@map("merchants")
@@ -296,6 +316,7 @@ model Payment {
   collectedById   String
   collectedBy     User          @relation("CollectedByUser", fields: [collectedById], references: [id])
   idempotencyKey  String?       @unique
+  deviceId        String?
   notes           String?
   paidAt          DateTime      @default(now())
   isVoided        Boolean       @default(false)
@@ -385,6 +406,7 @@ model SanitaryServiceSession {
   ticketDiscrepancy    Int           @default(0)
   discrepancyReason    String?
   status               SessionStatus @default(ABIERTO)
+  idempotencyKey       String?       @unique
   notes                String?
 
   tickets              Ticket[]
@@ -459,6 +481,98 @@ model MonthlyClosing {
 
   @@unique([year, month])
   @@map("monthly_closings")
+}
+
+model Meeting {
+  id          String        @id @default(uuid())
+  title       String
+  date        DateTime      @db.Date
+  time        String
+  location    String
+  description String?
+  status      MeetingStatus @default(PROGRAMADA)
+  createdById String
+  createdBy   User          @relation(fields: [createdById], references: [id])
+
+  attendances AttendanceEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@map("meetings")
+}
+
+model AttendanceEvent {
+  id             String   @id @default(uuid())
+  meetingId      String
+  meeting        Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  merchantId     String
+  merchant       Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  dni            String
+  scannedAt      DateTime @default(now())
+  deviceId       String?
+  registeredById String
+  registeredBy   User     @relation(fields: [registeredById], references: [id])
+  idempotencyKey String   @unique
+
+  createdAt DateTime @default(now())
+
+  @@unique([meetingId, merchantId])
+  @@index([meetingId])
+  @@index([merchantId])
+  @@map("attendance_events")
+}
+
+model Device {
+  id           String       @id @default(uuid())
+  deviceId     String       @unique
+  name         String
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  os           String       @default("Android")
+  appVersion   String       @default("1.0.0")
+  lastSyncAt   DateTime?
+  status       DeviceStatus @default(ACTIVO)
+
+  syncBatches  SyncBatch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("devices")
+}
+
+model SyncBatch {
+  id             String          @id @default(uuid())
+  deviceId       String
+  device         Device          @relation(fields: [deviceId], references: [id])
+  operationsCount Int
+  status         String          @default("COMPLETED")
+  errorSummary   String?
+  startedAt      DateTime        @default(now())
+  completedAt    DateTime?
+
+  operations     SyncOperation[]
+
+  @@map("sync_batches")
+}
+
+model SyncOperation {
+  id             String    @id @default(uuid())
+  batchId        String
+  batch          SyncBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  entity         String
+  action         String
+  idempotencyKey String
+  status         String    @default("SYNCED")
+  errorDetails   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([idempotencyKey])
+  @@map("sync_operations")
 }
 
 model AuditLog {

@@ -16,6 +16,8 @@ import { ExportsModule } from './modules/exports/exports.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { HealthModule } from './modules/health/health.module';
+import { SyncModule } from './modules/sync/sync.module';
+import { MeetingsModule } from './modules/meetings/meetings.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { HealthModule } from './modules/health/health.module';
     AuditModule,
     SettingsModule,
     HealthModule,
+    SyncModule,
+    MeetingsModule,
   ],
 })
 export class AppModule {}

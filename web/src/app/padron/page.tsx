@@ -1,7 +1,8 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
-import { Search, Plus, X } from 'lucide-react';
+import { Search, Plus, X, QrCode, Printer, ShieldCheck, UserCheck } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function PadronPage() {
   const [merchants, setMerchants] = useState<any[]>([]);
@@ -23,6 +24,7 @@ export default function PadronPage() {
   });
 
   const [selectedMerchant, setSelectedMerchant] = useState<any>(null);
+  const [carnetMerchant, setCarnetMerchant] = useState<any>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -81,12 +83,20 @@ export default function PadronPage() {
     }
   };
 
+  const openCarnet = (merchant: any) => {
+    setCarnetMerchant(merchant);
+  };
+
+  const handlePrintCarnet = () => {
+    window.print();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Padrón de Comerciantes</h1>
-          <p className="text-xs text-slate-500">Registro oficial de socios titulares, ambulantes fijos y temporales.</p>
+          <p className="text-xs text-slate-500">Registro oficial de socios titulares, ambulantes fijos y temporales con credencial QR permanente.</p>
         </div>
         <button
           onClick={() => setIsModalOpen(true)}
@@ -151,7 +161,24 @@ export default function PadronPage() {
                   <td className="py-3 px-4">{m.stall ? <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">{m.stall.code}</span> : <span className="text-slate-400 italic">Ambulatorio</span>}</td>
                   <td className="py-3 px-4">{m.businessCategory || '-'}</td>
                   <td className="py-3 px-4">{m._count?.obligations > 0 ? <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">{m._count.obligations} pendiente(s)</span> : <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">Al día</span>}</td>
-                  <td className="py-3 px-4 text-center"><button onClick={() => viewDetails(m.id)} className="text-xs bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 font-bold px-3 py-1 rounded transition">Estado de Cuenta</button></td>
+                  <td className="py-3 px-4 text-center">
+                    <div className="flex items-center justify-center space-x-1.5">
+                      <button
+                        onClick={() => openCarnet(m)}
+                        title="Ver Carnet Digital y Código QR"
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded flex items-center space-x-1 transition"
+                      >
+                        <QrCode className="w-3.5 h-3.5" />
+                        <span>Carnet QR</span>
+                      </button>
+                      <button
+                        onClick={() => viewDetails(m.id)}
+                        className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1 rounded transition"
+                      >
+                        Cta. Cte.
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -191,10 +218,19 @@ export default function PadronPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button onClick={() => setSelectedMerchant(null)} className="absolute right-4 top-4 text-slate-400"><X className="w-5 h-5" /></button>
-            <div className="border-b border-slate-100 pb-3 mb-4">
-              <span className="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{selectedMerchant.merchantType.name}</span>
-              <h2 className="text-xl font-black text-slate-800 mt-1">{selectedMerchant.lastName}, {selectedMerchant.firstName}</h2>
-              <p className="text-xs text-slate-500 font-mono">DNI: {selectedMerchant.dni} | Código: {selectedMerchant.internalCode} | Puesto: {selectedMerchant.stall?.code || 'Ambulatorio'}</p>
+            <div className="border-b border-slate-100 pb-3 mb-4 flex items-start justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{selectedMerchant.merchantType.name}</span>
+                <h2 className="text-xl font-black text-slate-800 mt-1">{selectedMerchant.lastName}, {selectedMerchant.firstName}</h2>
+                <p className="text-xs text-slate-500 font-mono">DNI: {selectedMerchant.dni} | Código: {selectedMerchant.internalCode} | Puesto: {selectedMerchant.stall?.code || 'Ambulatorio'}</p>
+              </div>
+              <button
+                onClick={() => openCarnet(selectedMerchant)}
+                className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Ver Carnet QR</span>
+              </button>
             </div>
             <h3 className="font-bold text-xs uppercase text-slate-700 mb-2">Obligaciones Registradas:</h3>
             <div className="space-y-2 mb-6">
@@ -217,6 +253,101 @@ export default function PadronPage() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {carnetMerchant && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setCarnetMerchant(null)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 print:hidden"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Carnet Card */}
+            <div id="printable-carnet" className="border-2 border-emerald-600 rounded-2xl p-5 bg-gradient-to-b from-emerald-50/50 via-white to-white text-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-2 bg-emerald-600" />
+              
+              <div className="flex items-center justify-center space-x-2 mb-2 pt-1">
+                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
+                  Mercado de Abastos Micaela Bastidas
+                </span>
+              </div>
+              
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-3">
+                Credencial Oficial de Comerciante
+              </p>
+
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-800 font-black text-lg mx-auto flex items-center justify-center border-2 border-emerald-400 mb-2 shadow-inner">
+                {carnetMerchant.firstName[0]}{carnetMerchant.lastName[0]}
+              </div>
+
+              <h3 className="font-black text-slate-900 text-sm leading-snug">
+                {carnetMerchant.lastName}, {carnetMerchant.firstName}
+              </h3>
+              
+              <div className="inline-block mt-1 mb-3 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
+                {carnetMerchant.merchantType?.name || 'Socio'}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-left bg-slate-50 p-2.5 rounded-xl text-[11px] mb-3 border border-slate-100">
+                <div>
+                  <span className="text-[9px] font-semibold text-slate-400 block uppercase">DNI</span>
+                  <span className="font-mono font-bold text-slate-800">{carnetMerchant.dni}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-semibold text-slate-400 block uppercase">Código</span>
+                  <span className="font-mono font-bold text-emerald-700">{carnetMerchant.internalCode}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-semibold text-slate-400 block uppercase">Puesto</span>
+                  <span className="font-bold text-slate-800">{carnetMerchant.stall ? carnetMerchant.stall.code : 'Ambulante'}</span>
+                </div>
+                <div>
+                  <span className="text-[9px] font-semibold text-slate-400 block uppercase">Rubro</span>
+                  <span className="font-medium text-slate-700 truncate block">{carnetMerchant.businessCategory || 'Venta'}</span>
+                </div>
+              </div>
+
+              {/* QR Code Container */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 inline-block shadow-sm">
+                <QRCodeSVG
+                  value={carnetMerchant.qrCode || `MB-QR-${carnetMerchant.dni}`}
+                  size={150}
+                  level="H"
+                  includeMargin={false}
+                />
+              </div>
+
+              <p className="mt-2 font-mono text-[9px] font-bold text-slate-500 tracking-wider">
+                {carnetMerchant.qrCode || `MB-QR-${carnetMerchant.dni}`}
+              </p>
+
+              <div className="mt-3 pt-2 border-t border-slate-100 text-[8px] text-slate-400 leading-tight">
+                Válido para cobros en puesto, pagos directos y asistencia a Asambleas Generales con Quórum en tiempo real.
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="mt-4 flex space-x-2 print:hidden">
+              <button
+                onClick={handlePrintCarnet}
+                className="flex-1 flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs shadow transition"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir Credencial</span>
+              </button>
+              <button
+                onClick={() => setCarnetMerchant(null)}
+                className="px-4 py-2.5 border border-slate-200 hover:bg-slate-50 font-bold text-slate-600 rounded-xl text-xs transition"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

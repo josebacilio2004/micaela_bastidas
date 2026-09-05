@@ -13,6 +13,8 @@ import {
   Sliders,
   History,
   Shield,
+  Calendar,
+  Smartphone,
 } from 'lucide-react';
 
 const navigation = [
@@ -22,6 +24,8 @@ const navigation = [
   { name: 'Cobranza y Pagos', href: '/pagos', icon: Receipt },
   { name: 'Servicios Higiénicos', href: '/servicios-higienicos', icon: Bath },
   { name: 'Caja y Cierres', href: '/caja', icon: Wallet },
+  { name: 'Reuniones y Asistencia', href: '/reuniones', icon: Calendar },
+  { name: 'Sincronización Móvil', href: '/sincronizacion', icon: Smartphone },
   { name: 'Reportes y Exportación', href: '/reportes', icon: FileSpreadsheet },
   { name: 'Tarifas Vigentes', href: '/tarifas', icon: Sliders },
   { name: 'Auditoría del Sistema', href: '/auditoria', icon: History },

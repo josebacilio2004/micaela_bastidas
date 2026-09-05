@@ -8,6 +8,7 @@ import '../../cobranza/presentation/cobrar_screen.dart';
 import '../../servicios_higienicos/presentation/sshh_counter_screen.dart';
 import '../../caja/presentation/caja_screen.dart';
 import '../../auth/presentation/login_screen.dart';
+import '../../asistencia/presentation/asistencia_screen.dart';
 
 class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
@@ -20,47 +21,89 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Map<String, dynamic>? _dashboardData;
   String _userName = '';
   String _userRole = '';
-  
+  int _pendingSyncCount = 0;
+  bool _isOnline = true;
+  bool _isSyncing = false;
 
   @override
   void initState() {
     super.initState();
     _loadUser();
+    _checkStatus();
     _fetchDashboard();
   }
 
   Future<void> _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _userName = prefs.getString('user_name') ?? 'Usuario';
-      _userRole = prefs.getString('user_role') ?? '';
+      _userName = prefs.getString('user_name') ?? 'Personal';
+      _userRole = prefs.getString('user_role') ?? 'Cobrador';
     });
   }
 
+  Future<void> _checkStatus() async {
+    final hasNet = await SyncService.instance.hasInternetConnection();
+    final pending = await SyncService.instance.getPendingCount();
+    if (mounted) {
+      setState(() {
+        _isOnline = hasNet;
+        _pendingSyncCount = pending;
+      });
+    }
+  }
+
   Future<void> _fetchDashboard() async {
-    
     try {
       final res = await ApiClient().dio.get('/reports/dashboard');
-      setState(() {
-        _dashboardData = res.data;
-      });
-    } catch (e) {
-      // Offline fallback
+      if (mounted) {
+        setState(() {
+          _dashboardData = res.data;
+          _isOnline = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isOnline = false);
     } finally {
-      
+      _checkStatus();
     }
   }
 
   Future<void> _triggerSync() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sincronizando operaciones con el servidor...')),
+      const SnackBar(content: Text('Sincronizando operaciones y actualizando padrón...')),
     );
-    final count = await SyncService.instance.syncPendingPayments();
-    _fetchDashboard();
+
+    final res = await SyncService.instance.syncAll();
+    await _checkStatus();
+    await _fetchDashboard();
+
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$count operaciones sincronizadas.')),
-      );
+      setState(() => _isSyncing = false);
+      if (res['status'] == 'SUCCESS') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppTheme.primary,
+            content: Text('Sincronizado: ${res['pushed']} enviadas, ${res['pulled']} actualizadas.'),
+          ),
+        );
+      } else if (res['status'] == 'OFFLINE') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Colors.amber,
+            content: Text('Sin conexión. Las operaciones se mantendrán seguras en SQLite.'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text('Error al sincronizar: ${res['error'] ?? 'Intente más tarde'}'),
+          ),
+        );
+      }
     }
   }
 
@@ -75,6 +118,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final toiletToday = _dashboardData?['today']?['toilet'] ?? 0.0;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Column(
           children: [
@@ -84,8 +128,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Sincronizar',
+            icon: _isSyncing
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.sync),
+            tooltip: 'Sincronizar Todo',
             onPressed: _triggerSync,
           ),
           IconButton(
@@ -104,16 +150,84 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _fetchDashboard,
+        onRefresh: () async {
+          await _triggerSync();
+          await _fetchDashboard();
+        },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Welcome User Card
+              // 1. Offline Sync & Connectivity Status Banner
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _isOnline ? Colors.white : Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _isOnline ? Colors.green.shade200 : Colors.amber.shade300,
+                  ),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _isOnline ? Colors.green : Colors.amber.shade800,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isOnline ? 'CONECTADO AL SERVIDOR' : 'MODO OFFLINE (SQLITE ACTIVO)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: _isOnline ? Colors.green.shade900 : Colors.amber.shade900,
+                            ),
+                          ),
+                          Text(
+                            _pendingSyncCount == 0
+                                ? 'Todo sincronizado con la base central'
+                                : '$_pendingSyncCount operaciones pendientes de subir',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _pendingSyncCount > 0 ? Colors.red.shade700 : Colors.black54,
+                              fontWeight: _pendingSyncCount > 0 ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        backgroundColor: AppTheme.primary.withOpacity(0.1),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.refresh, size: 14, color: AppTheme.primary),
+                      label: const Text('Sincronizar', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                      onPressed: _triggerSync,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // 2. Welcome User Card
+              Container(
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -140,7 +254,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Recaudación del Día (Card Principal)
+              // 3. Recaudación del Día (Card Principal)
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -194,14 +308,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Botones Grandes de Acción
+              // 4. Botones de Acción (Grid 2x2)
               Row(
                 children: [
                   Expanded(
                     child: _actionButton(
-                      title: 'COBRAR',
+                      title: 'COBRAR (QR)',
                       subtitle: 'Alcabala / Agua',
-                      icon: Icons.point_of_sale,
+                      icon: Icons.qr_code_scanner,
                       color: AppTheme.primary,
                       onTap: () => Navigator.push(
                         context,
@@ -210,6 +324,24 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  Expanded(
+                    child: _actionButton(
+                      title: 'ASISTENCIAS',
+                      subtitle: 'Modo Auditorio QR',
+                      icon: Icons.how_to_reg,
+                      color: const Color(0xFF0F766E),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AsistenciaScreen()),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
                   Expanded(
                     child: _actionButton(
                       title: 'SERVICIOS HIGIÉNICOS',
@@ -222,12 +354,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              Row(
-                children: [
+                  const SizedBox(width: 12),
                   Expanded(
                     child: _actionButton(
                       title: 'CAJA Y ARQUEO',
@@ -238,16 +365,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         context,
                         MaterialPageRoute(builder: (_) => const CajaScreen()),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _actionButton(
-                      title: 'SINCRONIZAR',
-                      subtitle: 'Cola offline',
-                      icon: Icons.cloud_sync,
-                      color: AppTheme.secondary,
-                      onTap: _triggerSync,
                     ),
                   ),
                 ],
@@ -283,7 +400,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
@@ -300,16 +417,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           children: [
             CircleAvatar(
               backgroundColor: color.withOpacity(0.12),
-              radius: 24,
-              child: Icon(icon, color: color, size: 26),
+              radius: 22,
+              child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w900,
-                fontSize: 13,
+                fontSize: 12,
                 color: color,
                 letterSpacing: 0.5,
               ),
@@ -318,7 +435,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
             ),
           ],
         ),

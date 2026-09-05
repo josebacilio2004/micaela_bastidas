@@ -37,6 +37,13 @@ export class MerchantsController {
     return this.merchantsService.findTypes();
   }
 
+  
+  @Get('merchants/qr/:qrCode')
+  @ApiOperation({ summary: 'Búsqueda ultrarrápida de comerciante por QR o DNI' })
+  findByQr(@Param('qrCode') qrCode: string) {
+    return this.merchantsService.findByQr(qrCode);
+  }
+
   @Get('merchants/:id')
   @ApiOperation({ summary: 'Obtener detalle completo de comerciante y su historial' })
   findOne(@Param('id') id: string) {

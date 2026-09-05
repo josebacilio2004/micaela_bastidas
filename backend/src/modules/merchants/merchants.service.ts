@@ -87,6 +87,7 @@ export class MerchantsService {
     const merchant = await this.prisma.merchant.create({
       data: {
         internalCode,
+        qrCode: 'MB-QR-' + internalCode,
         firstName: dto.firstName,
         lastName: dto.lastName,
         dni: dto.dni,
@@ -186,6 +187,31 @@ export class MerchantsService {
     });
 
     return updated;
+  }
+
+  
+  async findByQr(qrCode: string) {
+    const merchant = await this.prisma.merchant.findFirst({
+      where: {
+        OR: [
+          { qrCode },
+          { internalCode: qrCode },
+          { dni: qrCode },
+        ],
+        isDeleted: false,
+      },
+      include: {
+        merchantType: true,
+        stall: true,
+        sector: true,
+        obligations: {
+          where: { status: 'PENDIENTE' },
+          include: { concept: true },
+        },
+      },
+    });
+    if (!merchant) throw new NotFoundException('Comerciante no encontrado');
+    return merchant;
   }
 
   async softDelete(id: string, userId?: string) {
