@@ -5,11 +5,11 @@ class ApiConstants {
   // Default to emulator 10.0.2.2 for Android emulator, localhost for Web/Desktop/iOS
   static String get defaultBaseUrl {
     if (kIsWeb) {
-      return 'http://localhost:3000/api';
+      return 'http://localhost/api';
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:3000/api';
+      return 'http://10.0.2.2/api';
     } else {
-      return 'http://localhost:3000/api';
+      return 'http://localhost/api';
     }
   }
 
