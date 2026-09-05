@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+RUN mkdir -p /app/public
 RUN npm run build
 
 # --- STAGE 2: Runner ---
