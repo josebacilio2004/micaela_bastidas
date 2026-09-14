@@ -13,6 +13,13 @@ class ApiConstants {
     }
   }
 
+  static String get hostOrigin {
+    final base = defaultBaseUrl;
+    final uri = Uri.parse(base);
+    final portPart = (uri.hasPort && uri.port != 80 && uri.port != 443) ? ':${uri.port}' : '';
+    return '${uri.scheme}://${uri.host}$portPart';
+  }
+
   static const String login = '/auth/login';
   static const String dashboard = '/reports/dashboard';
   static const String merchants = '/merchants';

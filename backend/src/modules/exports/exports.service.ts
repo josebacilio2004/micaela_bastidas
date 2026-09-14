@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  isAlcabalaConcept,
+  isWaterConcept,
+  isAssemblyConcept,
+} from '../../common/utils/concept-classifier.util';
 
 @Injectable()
 export class ExportsService {
@@ -58,15 +63,28 @@ export class ExportsService {
       { header: 'Nro Operaciones', key: 'cantidad', width: 18 },
     ];
 
-    const alcabalaSum = payments.filter((p) => p.concept.code === 'ALCABALA').reduce((a, b) => a + Number(b.amount), 0);
-    const aguaSum = payments.filter((p) => p.concept.code === 'AGUA').reduce((a, b) => a + Number(b.amount), 0);
+    const alcabalaPayments = payments.filter((p) => isAlcabalaConcept(p.concept.code, p.concept.name));
+    const alcabalaSum = alcabalaPayments.reduce((a, b) => a + Number(b.amount), 0);
+
+    const waterPayments = payments.filter((p) => isWaterConcept(p.concept.code, p.concept.name));
+    const aguaSum = waterPayments.reduce((a, b) => a + Number(b.amount), 0);
+
+    const otherPayments = payments.filter(
+      (p) => !isAlcabalaConcept(p.concept.code, p.concept.name) && !isWaterConcept(p.concept.code, p.concept.name),
+    );
+    const otrosSum = otherPayments.reduce((a, b) => a + Number(b.amount), 0);
+
     const sshhSum = sessions.reduce((a, b) => a + Number(b.totalCollected), 0);
     const pendingSum = obligations.reduce((a, b) => a + Number(b.amount), 0);
+    const totalGeneral = payments.reduce((a, b) => a + Number(b.amount), 0) + sshhSum;
 
-    wsSummary.addRow({ concepto: 'Alcabala / Derecho de Puesto', monto: alcabalaSum, cantidad: payments.filter((p) => p.concept.code === 'ALCABALA').length });
-    wsSummary.addRow({ concepto: 'Servicio de Agua Potable', monto: aguaSum, cantidad: payments.filter((p) => p.concept.code === 'AGUA').length });
+    wsSummary.addRow({ concepto: 'Alcabala y Cuotas de Puesto (Socios y Ambulantes)', monto: alcabalaSum, cantidad: alcabalaPayments.length });
+    wsSummary.addRow({ concepto: 'Servicio de Agua Potable', monto: aguaSum, cantidad: waterPayments.length });
+    if (otrosSum > 0) {
+      wsSummary.addRow({ concepto: 'Otros Pagos y Multas', monto: otrosSum, cantidad: otherPayments.length });
+    }
     wsSummary.addRow({ concepto: 'Servicios Higiénicos (SSHH)', monto: sshhSum, cantidad: sessions.length });
-    wsSummary.addRow({ concepto: 'TOTAL RECAUDADO', monto: alcabalaSum + aguaSum + sshhSum, cantidad: payments.length + sessions.length });
+    wsSummary.addRow({ concepto: 'TOTAL RECAUDADO', monto: totalGeneral, cantidad: payments.length + sessions.length });
     wsSummary.addRow({ concepto: 'OBLIGACIONES PENDIENTES (Morosidad)', monto: pendingSum, cantidad: obligations.length });
 
     this.styleHeaderRow(wsSummary);

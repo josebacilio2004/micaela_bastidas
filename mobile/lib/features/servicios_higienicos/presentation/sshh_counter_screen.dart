@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -71,51 +72,193 @@ class _SshhCounterScreenState extends State<SshhCounterScreen> {
     }
   }
 
-  void _showCloseTurnDialog() {
-    final initTicketCtrl = TextEditingController();
-    final finalTicketCtrl = TextEditingController();
+  Future<void> _showCloseTurnDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastTicket = prefs.getInt('sshh_last_ticket_number') ?? 1000;
+    final totalUsos = _urinalCount + _toiletCount;
+    final startTicket = lastTicket + 1;
+    final endTicket = totalUsos > 0 ? (lastTicket + totalUsos) : startTicket;
+
+    final initTicketCtrl = TextEditingController(text: startTicket.toString());
+    final finalTicketCtrl = TextEditingController(text: endTicket.toString());
     final discReasonCtrl = TextEditingController();
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Cierre de Turno SSHH', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.receipt_long, color: Color(0xFFD97706), size: 22),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Cierre de Turno SSHH', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              ),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Total: S/ ${_total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total Recaudado:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black54)),
+                          Text('S/ ${_total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.primaryDark)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total Usos Registrados:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.black54)),
+                          Text('$totalUsos boletos', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87)),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Desglose:', style: TextStyle(fontSize: 10, color: Colors.black45)),
+                          Text('$_urinalCount micc. + $_toiletCount inod.', style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'RANGO DE BOLETOS CORRELATIVO:',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.black54, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: initTicketCtrl,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        decoration: InputDecoration(
+                          labelText: 'Ticket Inicial',
+                          labelStyle: const TextStyle(fontSize: 12),
+                          prefixIcon: const Icon(Icons.confirmation_number_outlined, size: 18),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6),
+                      child: Text('al', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black45)),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: finalTicketCtrl,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        decoration: InputDecoration(
+                          labelText: 'Ticket Final',
+                          labelStyle: const TextStyle(fontSize: 12),
+                          prefixIcon: const Icon(Icons.confirmation_number, size: 18),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
-                TextField(controller: initTicketCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ticket Inicial')),
-                const SizedBox(height: 8),
-                TextField(controller: finalTicketCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Ticket Final')),
-                const SizedBox(height: 8),
-                TextField(controller: discReasonCtrl, decoration: const InputDecoration(labelText: 'Motivo si hay diferencia')),
+                TextField(
+                  controller: discReasonCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Observación o Justificación (opcional)',
+                    labelStyle: const TextStyle(fontSize: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold)),
+            ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD97706),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
               onPressed: () async {
-                Navigator.pop(context);
-                if (_sessionId != null && !_sessionId!.startsWith('offline')) {
-                  try {
-                    await ApiClient().dio.post(
-                      '/sanitary-services/$_sessionId/close',
-                      data: {
-                        'initialTicketNumber': int.tryParse(initTicketCtrl.text),
-                        'finalTicketNumber': int.tryParse(finalTicketCtrl.text),
-                        'declaredTicketCount': _toiletCount + _urinalCount,
-                        'discrepancyReason': discReasonCtrl.text.isNotEmpty ? discReasonCtrl.text : null,
-                      },
+                final start = int.tryParse(initTicketCtrl.text) ?? startTicket;
+                final end = int.tryParse(finalTicketCtrl.text) ?? endTicket;
+
+                // Guardar correlativo final para el siguiente turno
+                await prefs.setInt('sshh_last_ticket_number', end);
+
+                final targetId = (_sessionId != null && !_sessionId!.startsWith('offline'))
+                    ? _sessionId!
+                    : 'active';
+
+                try {
+                  await ApiClient().dio.post(
+                    '/sanitary-services/$targetId/close',
+                    data: {
+                      'initialTicketNumber': start,
+                      'finalTicketNumber': end,
+                      'declaredTicketCount': totalUsos,
+                      'urinalCount': _urinalCount,
+                      'toiletCount': _toiletCount,
+                      'discrepancyReason': discReasonCtrl.text.isNotEmpty ? discReasonCtrl.text : null,
+                    },
+                  );
+
+                  if (mounted) {
+                    Navigator.pop(context); // cerrar diálogo
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('✓ Turno cerrado y sincronizado ($totalUsos tickets, S/ ${_total.toStringAsFixed(2)})'),
+                        backgroundColor: const Color(0xFF047857),
+                        duration: const Duration(seconds: 4),
+                      ),
                     );
-                  } catch (_) {}
+                    Navigator.pop(context); // volver a dashboard
+                  }
+                } catch (err) {
+                  if (mounted) {
+                    Navigator.pop(context); // cerrar diálogo
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Turno guardado (#$start a #$end). Red no disponible: $err'),
+                        backgroundColor: const Color(0xFFD97706),
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    Navigator.pop(context); // volver a dashboard
+                  }
                 }
-                if (mounted) Navigator.pop(context);
               },
-              child: const Text('Cerrar Turno'),
+              child: const Text('Confirmar y Cerrar Turno', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         );

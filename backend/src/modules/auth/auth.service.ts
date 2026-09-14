@@ -117,12 +117,12 @@ export class AuthService {
 
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_SECRET') || 'jwt_super_secret_micaela_bastidas_production_key_2026_auth',
-      expiresIn: this.configService.get<string>('JWT_EXPIRES_IN') || '1d',
+      expiresIn: this.configService.get<string>('JWT_EXPIRES_IN') || '7d',
     });
 
     const refreshToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_REFRESH_SECRET') || 'jwt_refresh_super_secret_micaela_bastidas_key_2026_auth',
-      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d',
+      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '30d',
     });
 
     return { accessToken, refreshToken };

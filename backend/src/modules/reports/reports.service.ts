@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ObligationStatus } from '@prisma/client';
+import {
+  isAlcabalaConcept,
+  isWaterConcept,
+  isAssemblyConcept,
+} from '../../common/utils/concept-classifier.util';
 
 @Injectable()
 export class ReportsService {
@@ -31,18 +36,22 @@ export class ReportsService {
     });
 
     const alcabalaToday = paymentsToday
-      .filter((p) => p.concept.code === 'ALCABALA')
+      .filter((p) => isAlcabalaConcept(p.concept.code, p.concept.name))
       .reduce((a, b) => a + Number(b.amount), 0);
 
     const waterToday = paymentsToday
-      .filter((p) => p.concept.code === 'AGUA')
+      .filter((p) => isWaterConcept(p.concept.code, p.concept.name))
+      .reduce((a, b) => a + Number(b.amount), 0);
+
+    const otherPaymentsToday = paymentsToday
+      .filter((p) => !isAlcabalaConcept(p.concept.code, p.concept.name) && !isWaterConcept(p.concept.code, p.concept.name))
       .reduce((a, b) => a + Number(b.amount), 0);
 
     const urinalToday = sanitaryToday.reduce((a, b) => a + Number(b.urinalTotal), 0);
     const toiletToday = sanitaryToday.reduce((a, b) => a + Number(b.toiletTotal), 0);
     const sanitaryTotalToday = urinalToday + toiletToday;
 
-    const totalToday = alcabalaToday + waterToday + sanitaryTotalToday;
+    const totalToday = alcabalaToday + waterToday + otherPaymentsToday + sanitaryTotalToday;
 
     // 3. Month collection
     const paymentsMonth = await this.prisma.payment.findMany({
@@ -126,12 +135,13 @@ export class ReportsService {
       }),
     ]);
 
-    const alcabalaSum = payments.filter((p) => p.concept.code === 'ALCABALA').reduce((a, b) => a + Number(b.amount), 0);
-    const waterSum = payments.filter((p) => p.concept.code === 'AGUA').reduce((a, b) => a + Number(b.amount), 0);
+    const alcabalaSum = payments.filter((p) => isAlcabalaConcept(p.concept.code, p.concept.name)).reduce((a, b) => a + Number(b.amount), 0);
+    const waterSum = payments.filter((p) => isWaterConcept(p.concept.code, p.concept.name)).reduce((a, b) => a + Number(b.amount), 0);
+    const otherPaymentsSum = payments.filter((p) => !isAlcabalaConcept(p.concept.code, p.concept.name) && !isWaterConcept(p.concept.code, p.concept.name)).reduce((a, b) => a + Number(b.amount), 0);
     const urinalSum = sessions.reduce((a, b) => a + Number(b.urinalTotal), 0);
     const toiletSum = sessions.reduce((a, b) => a + Number(b.toiletTotal), 0);
     const sanitarySum = urinalSum + toiletSum;
-    const totalCollected = alcabalaSum + waterSum + sanitarySum;
+    const totalCollected = alcabalaSum + waterSum + otherPaymentsSum + sanitarySum;
 
     return {
       date: startOfDay.toISOString().split('T')[0],

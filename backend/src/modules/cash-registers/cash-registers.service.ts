@@ -1,6 +1,12 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CashRegisterStatus, CashMovementType, AuditAction } from '@prisma/client';
+import {
+  isAlcabalaConcept,
+  isWaterConcept,
+  isAssemblyConcept,
+  isSanitaryConcept,
+} from '../../common/utils/concept-classifier.util';
 
 @Injectable()
 export class CashRegistersService {
@@ -31,17 +37,18 @@ export class CashRegistersService {
   }
 
   async openRegister(dto: { name: string; openingAmount: number }, userId: string) {
+    const registerName = dto.name?.trim() || 'Caja General del Día';
     const existing = await this.prisma.cashRegister.findFirst({
-      where: { status: CashRegisterStatus.ABIERTO },
+      where: { status: CashRegisterStatus.ABIERTO, name: registerName },
     });
     if (existing) {
-      throw new BadRequestException(`Ya existe una caja abierta (${existing.name}). Debe cerrarla antes de abrir una nueva.`);
+      throw new BadRequestException(`Ya existe una caja abierta con el nombre "${existing.name}". Debe cerrarla antes de abrir una nueva con el mismo nombre.`);
     }
 
     const register = await this.prisma.cashRegister.create({
       data: {
-        name: dto.name,
-        openingAmount: dto.openingAmount,
+        name: registerName,
+        openingAmount: dto.openingAmount || 0,
         openedById: userId,
         status: CashRegisterStatus.ABIERTO,
       },
@@ -55,11 +62,145 @@ export class CashRegistersService {
         module: 'CASH_REGISTER',
         entityName: 'CashRegister',
         entityId: register.id,
-        newValues: { name: dto.name, openingAmount: dto.openingAmount },
+        newValues: { name: registerName, openingAmount: dto.openingAmount },
       },
     });
 
     return register;
+  }
+
+  async getDailyConsolidated(dateStr?: string) {
+    let startOfDay: Date;
+    let endOfDay: Date;
+
+    if (dateStr) {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        startOfDay = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+        endOfDay = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
+      } else {
+        const target = new Date(dateStr);
+        startOfDay = new Date(target);
+        startOfDay.setHours(0, 0, 0, 0);
+        endOfDay = new Date(target);
+        endOfDay.setHours(23, 59, 59, 999);
+      }
+    } else {
+      const now = new Date();
+      startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+      endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+    }
+
+    const registers = await this.prisma.cashRegister.findMany({
+      where: {
+        openedAt: { gte: startOfDay, lte: endOfDay },
+      },
+      include: {
+        openedBy: { select: { fullName: true } },
+        closedBy: { select: { fullName: true } },
+        movements: true,
+      },
+      orderBy: { openedAt: 'desc' },
+    });
+
+    const anyCurrentOpen = await this.prisma.cashRegister.findFirst({
+      where: { status: CashRegisterStatus.ABIERTO },
+      include: {
+        openedBy: { select: { fullName: true } },
+        movements: true,
+      },
+      orderBy: { openedAt: 'desc' },
+    });
+
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        paidAt: { gte: startOfDay, lte: endOfDay },
+        isVoided: false,
+      },
+      include: {
+        concept: true,
+        merchant: {
+          include: { stall: true, merchantType: true },
+        },
+        collectedBy: { select: { fullName: true } },
+      },
+      orderBy: { paidAt: 'desc' },
+    });
+
+    const sanitarySessions = await this.prisma.sanitaryServiceSession.findMany({
+      where: {
+        startTime: { gte: startOfDay, lte: endOfDay },
+      },
+      include: { operator: { select: { fullName: true } } },
+      orderBy: { startTime: 'desc' },
+    });
+
+    const alcabalaPayments = payments.filter((p) => isAlcabalaConcept(p.concept.code, p.concept.name));
+    const alcabalaSum = alcabalaPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+
+    const waterPayments = payments.filter((p) => isWaterConcept(p.concept.code, p.concept.name));
+    const waterSum = waterPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+
+    const assemblyPayments = payments.filter((p) => isAssemblyConcept(p.concept.code, p.concept.name));
+    const assemblySum = assemblyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+
+    const otherPayments = payments.filter(
+      (p) =>
+        !isAlcabalaConcept(p.concept.code, p.concept.name) &&
+        !isWaterConcept(p.concept.code, p.concept.name) &&
+        !isAssemblyConcept(p.concept.code, p.concept.name),
+    );
+    const otherPaymentsSum = otherPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+
+    const totalPaymentsSum = payments.reduce((acc, p) => acc + Number(p.amount), 0);
+    const sanitarySum = sanitarySessions.reduce((acc, s) => acc + Number(s.totalCollected), 0);
+
+    const totalCollected = totalPaymentsSum + sanitarySum;
+    const openingTotal = registers.reduce((acc, r) => acc + Number(r.openingAmount), 0);
+    const countedTotal = registers
+      .filter((r) => r.countedCash != null)
+      .reduce((acc, r) => acc + Number(r.countedCash), 0);
+    const differenceTotal = registers
+      .filter((r) => r.difference != null)
+      .reduce((acc, r) => acc + Number(r.difference), 0);
+
+    return {
+      date: startOfDay.toISOString().split('T')[0],
+      registersCount: registers.length,
+      activeRegisters: registers.filter((r) => r.status === 'ABIERTO'),
+      currentlyOpenRegister: anyCurrentOpen,
+      closedRegisters: registers.filter((r) => r.status === 'CERRADO'),
+      breakdown: {
+        alcabala: alcabalaSum,
+        water: waterSum,
+        assemblies: assemblySum,
+        other: otherPaymentsSum,
+        sanitary: sanitarySum,
+        totalPayments: totalPaymentsSum,
+        totalCollected,
+        openingTotal,
+        expectedTotal: openingTotal + totalCollected,
+        countedTotal,
+        differenceTotal,
+      },
+      counts: {
+        alcabala: alcabalaPayments.length,
+        water: waterPayments.length,
+        assemblies: assemblyPayments.length,
+        other: otherPayments.length,
+        totalPayments: payments.length,
+        sanitarySessions: sanitarySessions.length,
+      },
+      paymentsCount: payments.length,
+      sanitarySessionsCount: sanitarySessions.length,
+      payments,
+      sanitarySessions,
+    };
   }
 
   async addMovement(id: string, dto: { type: CashMovementType; concept: string; amount: number; reference?: string }, userId: string) {
@@ -86,7 +227,10 @@ export class CashRegistersService {
       where: { id },
       include: {
         openedBy: true,
-        movements: true,
+        movements: {
+          include: { user: { select: { fullName: true } } },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
     if (!register) throw new NotFoundException('Caja no encontrada');
@@ -94,22 +238,41 @@ export class CashRegistersService {
     // Aggregate payments collected in this register
     const payments = await this.prisma.payment.findMany({
       where: { cashRegisterId: id, isVoided: false },
-      include: { concept: true },
+      include: {
+        concept: true,
+        merchant: {
+          include: { stall: true, merchantType: true },
+        },
+        collectedBy: { select: { fullName: true, username: true } },
+      },
+      orderBy: { paidAt: 'desc' },
     });
 
     // Aggregate sanitary sessions in this register
     const sessions = await this.prisma.sanitaryServiceSession.findMany({
       where: { cashRegisterId: id },
+      include: { operator: { select: { fullName: true } } },
+      orderBy: { startTime: 'desc' },
     });
 
-    const alcabalaSum = payments
-      .filter((p) => p.concept.code === 'ALCABALA')
-      .reduce((acc, p) => acc + Number(p.amount), 0);
+    const alcabalaPayments = payments.filter((p) => isAlcabalaConcept(p.concept.code, p.concept.name));
+    const alcabalaSum = alcabalaPayments.reduce((acc, p) => acc + Number(p.amount), 0);
 
-    const waterSum = payments
-      .filter((p) => p.concept.code === 'AGUA')
-      .reduce((acc, p) => acc + Number(p.amount), 0);
+    const waterPayments = payments.filter((p) => isWaterConcept(p.concept.code, p.concept.name));
+    const waterSum = waterPayments.reduce((acc, p) => acc + Number(p.amount), 0);
 
+    const assemblyPayments = payments.filter((p) => isAssemblyConcept(p.concept.code, p.concept.name));
+    const assemblySum = assemblyPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+
+    const otherPayments = payments.filter(
+      (p) =>
+        !isAlcabalaConcept(p.concept.code, p.concept.name) &&
+        !isWaterConcept(p.concept.code, p.concept.name) &&
+        !isAssemblyConcept(p.concept.code, p.concept.name),
+    );
+    const otherPaymentsSum = otherPayments.reduce((acc, p) => acc + Number(p.amount), 0);
+
+    const totalPaymentsSum = payments.reduce((acc, p) => acc + Number(p.amount), 0);
     const sanitarySum = sessions.reduce((acc, s) => acc + Number(s.totalCollected), 0);
 
     const movementsIncome = register.movements
@@ -120,7 +283,7 @@ export class CashRegistersService {
       .filter((m) => m.type === CashMovementType.EGRESO)
       .reduce((acc, m) => acc + Number(m.amount), 0);
 
-    const totalCollected = alcabalaSum + waterSum + sanitarySum + movementsIncome;
+    const totalCollected = totalPaymentsSum + sanitarySum + movementsIncome;
     const expectedCash = Number(register.openingAmount) + totalCollected - movementsExpense;
 
     return {
@@ -128,13 +291,24 @@ export class CashRegistersService {
       openingAmount: Number(register.openingAmount),
       alcabalaSum,
       waterSum,
+      assemblySum,
+      otherPaymentsSum,
       sanitarySum,
+      totalPaymentsSum,
       movementsIncome,
       movementsExpense,
       totalCollected,
       expectedCash,
       paymentsCount: payments.length,
       sanitarySessionsCount: sessions.length,
+      counts: {
+        alcabala: alcabalaPayments.length,
+        water: waterPayments.length,
+        assemblies: assemblyPayments.length,
+        other: otherPayments.length,
+      },
+      payments,
+      sessions,
     };
   }
 

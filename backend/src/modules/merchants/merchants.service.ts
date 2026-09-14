@@ -37,7 +37,7 @@ export class MerchantsService {
           select: { obligations: { where: { status: 'PENDIENTE' } } },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
   }
 
@@ -75,9 +75,15 @@ export class MerchantsService {
     const count = await this.prisma.merchant.count();
     const internalCode = formatMerchantCode(count + 1);
 
+    const cleanStallId = dto.stallId && dto.stallId.trim().length > 0 ? dto.stallId.trim() : null;
+    const cleanSectorId = dto.sectorId && dto.sectorId.trim().length > 0 ? dto.sectorId.trim() : null;
+    const cleanPhone = dto.phone && dto.phone.trim().length > 0 ? dto.phone.trim() : null;
+    const cleanAddress = dto.address && dto.address.trim().length > 0 ? dto.address.trim() : null;
+    const cleanCategory = dto.businessCategory && dto.businessCategory.trim().length > 0 ? dto.businessCategory.trim() : null;
+
     // If stall assigned, verify stall is free
-    if (dto.stallId) {
-      const stall = await this.prisma.marketStall.findUnique({ where: { id: dto.stallId } });
+    if (cleanStallId) {
+      const stall = await this.prisma.marketStall.findUnique({ where: { id: cleanStallId } });
       if (!stall) throw new NotFoundException('El puesto indicado no existe');
       if (stall.status === StallStatus.OCUPADO) {
         throw new BadRequestException('El puesto indicado ya se encuentra ocupado');
@@ -87,16 +93,16 @@ export class MerchantsService {
     const merchant = await this.prisma.merchant.create({
       data: {
         internalCode,
-        qrCode: 'MB-QR-' + internalCode,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        dni: dto.dni,
-        phone: dto.phone,
-        address: dto.address,
+        qrCode: `MB-QR-${dto.dni}`,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        dni: dto.dni.trim(),
+        phone: cleanPhone,
+        address: cleanAddress,
         merchantTypeId: dto.merchantTypeId,
-        sectorId: dto.sectorId,
-        stallId: dto.stallId,
-        businessCategory: dto.businessCategory,
+        sectorId: cleanSectorId,
+        stallId: cleanStallId,
+        businessCategory: cleanCategory,
         status: dto.status || MerchantStatus.ACTIVO,
         observations: dto.observations,
         createdById: userId,
@@ -104,12 +110,103 @@ export class MerchantsService {
       include: { merchantType: true, sector: true, stall: true },
     });
 
-    if (dto.stallId) {
+    if (cleanStallId) {
       await this.prisma.marketStall.update({
-        where: { id: dto.stallId },
+        where: { id: cleanStallId },
         data: { status: StallStatus.OCUPADO, assignedAt: new Date() },
       });
     }
+
+    // Generate initial pending obligations according to merchant type
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const monthPeriod = `${year}-${String(month).padStart(2, '0')}`;
+      const dayPeriod = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const lastDayOfMonth = new Date(year, month, 0).getDate();
+      const monthDueDate = new Date(`${year}-${String(month).padStart(2, '0')}-${lastDayOfMonth}T23:59:59`);
+      const dayDueDate = new Date(`${dayPeriod}T23:59:59`);
+
+      const [alcabalaConcept, cuotaSocialConcept, aguaConcept, rates] = await Promise.all([
+        this.prisma.paymentConcept.findFirst({ where: { code: { in: ['ALCABALA_DIARIA', 'ALCABALA'] } } }),
+        this.prisma.paymentConcept.findFirst({ where: { code: { in: ['CUOTA_MANTENIMIENTO', 'CUOTA_SOCIAL', 'ALCABALA'] } } }),
+        this.prisma.paymentConcept.findFirst({ where: { code: { in: ['CUOTA_AGUA', 'AGUA'] } } }),
+        this.prisma.rate.findMany({ where: { isActive: true } }),
+      ]);
+
+      const getAmt = (conceptId: string, fallback: number) => {
+        const spec = rates.find((r) => r.conceptId === conceptId && r.merchantTypeId === merchant.merchantTypeId);
+        if (spec) return Number(spec.amount);
+        const gen = rates.find((r) => r.conceptId === conceptId && !r.merchantTypeId);
+        if (gen) return Number(gen.amount);
+        return fallback;
+      };
+
+      if (merchant.merchantType.code === 'SOCIO') {
+        if (cuotaSocialConcept) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: merchant.id,
+              conceptId: cuotaSocialConcept.id,
+              period: monthPeriod,
+              year,
+              month,
+              dueDate: monthDueDate,
+              amount: getAmt(cuotaSocialConcept.id, 10.00),
+              status: 'PENDIENTE',
+            },
+          });
+        }
+        if (aguaConcept) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: merchant.id,
+              conceptId: aguaConcept.id,
+              period: monthPeriod,
+              year,
+              month,
+              dueDate: monthDueDate,
+              amount: getAmt(aguaConcept.id, 6.00),
+              status: 'PENDIENTE',
+            },
+          });
+        }
+      } else {
+        // Ambulante Fijo o Temporal
+        if (alcabalaConcept) {
+          const defaultDaily = merchant.merchantType.code === 'AMBULANTE_FIJO' ? 3.00 : 4.00;
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: merchant.id,
+              conceptId: alcabalaConcept.id,
+              period: dayPeriod,
+              year,
+              month,
+              day,
+              dueDate: dayDueDate,
+              amount: getAmt(alcabalaConcept.id, defaultDaily),
+              status: 'PENDIENTE',
+            },
+          });
+        }
+        if (merchant.merchantType.code === 'AMBULANTE_FIJO' && aguaConcept) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: merchant.id,
+              conceptId: aguaConcept.id,
+              period: monthPeriod,
+              year,
+              month,
+              dueDate: monthDueDate,
+              amount: getAmt(aguaConcept.id, 3.00),
+              status: 'PENDIENTE',
+            },
+          });
+        }
+      }
+    } catch (_) {}
 
     // Audit log
     await this.prisma.auditLog.create({
@@ -134,22 +231,28 @@ export class MerchantsService {
       if (exists) throw new ConflictException('Ya existe un comerciante registrado con este DNI');
     }
 
+    const cleanStallId = dto.stallId !== undefined ? (dto.stallId && dto.stallId.trim().length > 0 ? dto.stallId.trim() : null) : current.stallId;
+    const cleanSectorId = dto.sectorId !== undefined ? (dto.sectorId && dto.sectorId.trim().length > 0 ? dto.sectorId.trim() : null) : current.sectorId;
+    const cleanPhone = dto.phone !== undefined ? (dto.phone && dto.phone.trim().length > 0 ? dto.phone.trim() : null) : current.phone;
+    const cleanAddress = dto.address !== undefined ? (dto.address && dto.address.trim().length > 0 ? dto.address.trim() : null) : current.address;
+    const cleanCategory = dto.businessCategory !== undefined ? (dto.businessCategory && dto.businessCategory.trim().length > 0 ? dto.businessCategory.trim() : null) : current.businessCategory;
+
     // Handle stall re-assignment if changed
-    if (dto.stallId !== undefined && dto.stallId !== current.stallId) {
+    if (cleanStallId !== current.stallId) {
       if (current.stallId) {
         await this.prisma.marketStall.update({
           where: { id: current.stallId },
           data: { status: StallStatus.LIBRE, assignedAt: null },
         });
       }
-      if (dto.stallId) {
-        const newStall = await this.prisma.marketStall.findUnique({ where: { id: dto.stallId } });
+      if (cleanStallId) {
+        const newStall = await this.prisma.marketStall.findUnique({ where: { id: cleanStallId } });
         if (!newStall) throw new NotFoundException('El puesto indicado no existe');
         if (newStall.status === StallStatus.OCUPADO) {
           throw new BadRequestException('El nuevo puesto indicado ya se encuentra ocupado');
         }
         await this.prisma.marketStall.update({
-          where: { id: dto.stallId },
+          where: { id: cleanStallId },
           data: { status: StallStatus.OCUPADO, assignedAt: new Date() },
         });
       }
@@ -158,15 +261,15 @@ export class MerchantsService {
     const updated = await this.prisma.merchant.update({
       where: { id },
       data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        dni: dto.dni,
-        phone: dto.phone,
-        address: dto.address,
+        firstName: dto.firstName !== undefined ? dto.firstName.trim() : undefined,
+        lastName: dto.lastName !== undefined ? dto.lastName.trim() : undefined,
+        dni: dto.dni !== undefined ? dto.dni.trim() : undefined,
+        phone: cleanPhone,
+        address: cleanAddress,
         merchantTypeId: dto.merchantTypeId,
-        sectorId: dto.sectorId,
-        stallId: dto.stallId,
-        businessCategory: dto.businessCategory,
+        sectorId: cleanSectorId,
+        stallId: cleanStallId,
+        businessCategory: cleanCategory,
         status: dto.status,
         observations: dto.observations,
         updatedById: userId,
@@ -242,5 +345,54 @@ export class MerchantsService {
     });
 
     return { message: 'Comerciante desactivado del padrón correctamente', id: deleted.id };
+  }
+
+  async findCategories() {
+    try {
+      const categories = await (this.prisma as any).businessCategory.findMany({
+        where: { isActive: true },
+        orderBy: { name: 'asc' },
+      });
+      if (categories.length > 0) return categories;
+    } catch (_) {}
+
+    // Fallback list of default categories
+    return [
+      { id: 'cat-1', name: 'Carnes y Pescados', description: 'Venta de carnes rojas, aves y pescados' },
+      { id: 'cat-2', name: 'Frutas y Verduras', description: 'Frutas frescas y hortalizas' },
+      { id: 'cat-3', name: 'Abarrotes y Granos', description: 'Víveres, lácteos y productos secos' },
+      { id: 'cat-4', name: 'Comidas y Jugos', description: 'Comida preparada, menús y jugos' },
+      { id: 'cat-5', name: 'Flores y Plantas', description: 'Arreglos florales y plantas ornamentales' },
+      { id: 'cat-6', name: 'Bolsas y Plásticos', description: 'Envases, descartables y bolsas' },
+      { id: 'cat-7', name: 'Hierbas y Especias', description: 'Plantas medicinales y condimentos' },
+      { id: 'cat-8', name: 'Tubérculos', description: 'Papa, camote, yuca y tubérculos andinos' },
+    ];
+  }
+
+  async createCategory(name: string, description?: string) {
+    if (!name || name.trim().length === 0) {
+      throw new BadRequestException('El nombre del rubro es obligatorio');
+    }
+    const cleanName = name.trim();
+    try {
+      return await (this.prisma as any).businessCategory.upsert({
+        where: { name: cleanName },
+        update: { isActive: true },
+        create: { name: cleanName, description: description?.trim() || null },
+      });
+    } catch (e) {
+      return { id: `cat-${Date.now()}`, name: cleanName, description };
+    }
+  }
+
+  async deleteCategory(id: string) {
+    try {
+      return await (this.prisma as any).businessCategory.update({
+        where: { id },
+        data: { isActive: false },
+      });
+    } catch (_) {
+      return { message: 'Rubro eliminado' };
+    }
   }
 }

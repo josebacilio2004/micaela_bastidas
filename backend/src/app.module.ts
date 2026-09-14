@@ -18,6 +18,9 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { HealthModule } from './modules/health/health.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { MeetingsModule } from './modules/meetings/meetings.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
+import { StaffModule } from './modules/staff/staff.module';
+import { CamerasModule } from './modules/cameras/cameras.module';
 
 @Module({
   imports: [
@@ -40,6 +43,9 @@ import { MeetingsModule } from './modules/meetings/meetings.module';
     HealthModule,
     SyncModule,
     MeetingsModule,
+    UploadsModule,
+    StaffModule,
+    CamerasModule,
   ],
 })
 export class AppModule {}

@@ -19,6 +19,12 @@ export class ConceptsController {
     return this.conceptsService.findAllConcepts();
   }
 
+  @Get('concepts')
+  @ApiOperation({ summary: 'Alias para listar conceptos de pago' })
+  findAllConceptsAlias() {
+    return this.conceptsService.findAllConcepts();
+  }
+
   @Get('rates')
   @ApiOperation({ summary: 'Listar historial y catálogo de tarifas' })
   findAllRates() {

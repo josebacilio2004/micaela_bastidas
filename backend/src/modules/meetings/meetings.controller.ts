@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { MeetingsService } from './meetings.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -12,9 +12,11 @@ export class MeetingsController {
   constructor(private meetingsService: MeetingsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Listar todas las asambleas y reuniones de socios' })
-  findAll() {
-    return this.meetingsService.findAll();
+  @ApiOperation({ summary: 'Listar todas las asambleas y reuniones de socios con filtro de fecha opcional' })
+  @ApiQuery({ name: 'date', required: false, description: 'Filtrar por fecha específica (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filtrar por estado' })
+  findAll(@Query('date') date?: string, @Query('status') status?: string) {
+    return this.meetingsService.findAll({ date, status });
   }
 
   @Get(':id')
@@ -32,10 +34,19 @@ export class MeetingsController {
   @Post()
   @ApiOperation({ summary: 'Crear nueva asamblea o reunión general' })
   create(
-    @Body() dto: { title: string; date: string; time: string; location: string; description?: string },
+    @Body() dto: { title: string; date: string; time: string; location: string; description?: string; status?: any },
     @CurrentUser('id') userId: string,
   ) {
     return this.meetingsService.create(dto, userId);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({ summary: 'Actualizar estado de la asamblea (PROGRAMADA, EN_CURSO, FINALIZADA)' })
+  updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: any,
+  ) {
+    return this.meetingsService.updateStatus(id, status);
   }
 
   @Post(':id/attendance')

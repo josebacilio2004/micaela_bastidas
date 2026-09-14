@@ -81,14 +81,60 @@ export class SyncService {
               orderBy: { openedAt: 'desc' },
             });
 
+            // Safely resolve concept
+            let resolvedConceptId = op.payload.conceptId;
+            let conceptExists = resolvedConceptId
+              ? await this.prisma.paymentConcept.findUnique({ where: { id: resolvedConceptId } })
+              : null;
+
+            if (!conceptExists) {
+              const conceptName = (op.payload.conceptName || '').toLowerCase();
+              let targetCode = 'ALCABALA_DIARIA';
+              if (conceptName.includes('agua')) {
+                targetCode = 'CUOTA_AGUA';
+              } else if (conceptName.includes('cuota') || conceptName.includes('mantenimiento') || conceptName.includes('social')) {
+                targetCode = 'CUOTA_MANTENIMIENTO';
+              }
+
+              const matchedConcept = await this.prisma.paymentConcept.findFirst({
+                where: { code: targetCode },
+              });
+              resolvedConceptId = matchedConcept?.id || (await this.prisma.paymentConcept.findFirst())?.id;
+            }
+
+            // Safely resolve obligation
+            let resolvedObligationId = op.payload.obligationId;
+            if (resolvedObligationId) {
+              const obExists = await this.prisma.paymentObligation.findUnique({
+                where: { id: resolvedObligationId },
+              });
+              if (!obExists) {
+                resolvedObligationId = null;
+              }
+            }
+
+            // If no valid obligationId was provided, attempt to match an existing pending obligation
+            if (!resolvedObligationId && op.payload.merchantId && resolvedConceptId) {
+              const pendingOb = await this.prisma.paymentObligation.findFirst({
+                where: {
+                  merchantId: op.payload.merchantId,
+                  conceptId: resolvedConceptId,
+                  status: 'PENDIENTE',
+                },
+              });
+              if (pendingOb) {
+                resolvedObligationId = pendingOb.id;
+              }
+            }
+
             const newPayment = await this.prisma.payment.create({
               data: {
                 operationNumber,
                 merchantId: op.payload.merchantId,
-                conceptId: op.payload.conceptId,
-                obligationId: op.payload.obligationId,
-                amount: op.payload.amount,
-                period: op.payload.period,
+                conceptId: resolvedConceptId,
+                obligationId: resolvedObligationId,
+                amount: Number(op.payload.amount) || 0,
+                period: op.payload.period || formatOperationNumber(now, 1),
                 paymentMethod: op.payload.paymentMethod || 'EFECTIVO',
                 cashRegisterId: cashRegister?.id || null,
                 collectedById: userId,
@@ -98,9 +144,9 @@ export class SyncService {
               },
             });
 
-            if (op.payload.obligationId) {
+            if (resolvedObligationId) {
               await this.prisma.paymentObligation.update({
-                where: { id: op.payload.obligationId },
+                where: { id: resolvedObligationId },
                 data: { status: 'PAGADO', paidAt: now },
               });
             }

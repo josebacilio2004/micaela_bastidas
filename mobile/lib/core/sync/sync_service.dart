@@ -173,6 +173,12 @@ class SyncService {
         await LocalDatabase.instance.cacheMerchants(merchants);
       }
 
+      // Cache obligations
+      final obligations = data['obligations'] as List? ?? [];
+      if (obligations.isNotEmpty) {
+        await LocalDatabase.instance.cacheObligations(obligations);
+      }
+
       // Cache meetings
       final meetings = data['meetings'] as List? ?? [];
       if (meetings.isNotEmpty) {
@@ -185,7 +191,7 @@ class SyncService {
       }
 
       return {
-        'totalItems': merchants.length + meetings.length,
+        'totalItems': merchants.length + obligations.length + meetings.length,
         'cursor': newCursor,
       };
     } catch (e) {

@@ -217,6 +217,8 @@ model Merchant {
   status           MerchantStatus @default(ACTIVO)
   isDeleted        Boolean        @default(false)
   photoUrl         String?
+  utilityBillPdfUrl String?
+  utilityBillUploadedAt DateTime?
   qrCode           String         @unique
   observations     String?
 
@@ -410,6 +412,7 @@ model SanitaryServiceSession {
   notes                String?
 
   tickets              Ticket[]
+  entryTickets         SanitaryEntryTicket[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -604,3 +607,95 @@ model SystemSetting {
 
   @@map("system_settings")
 }
+
+model BusinessCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("business_categories")
+}
+
+model SanitaryEntryTicket {
+  id            String                 @id @default(uuid())
+  sessionId     String
+  session       SanitaryServiceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ticketNumber  Int
+  ticketCode    String                 @unique
+  amount        Decimal                @default(0.50) @db.Decimal(10, 2)
+  issuedAt      DateTime               @default(now())
+  isValidated   Boolean                @default(false)
+  validatedAt   DateTime?
+  validatedById String?
+
+  @@index([sessionId])
+  @@index([ticketCode])
+  @@map("sanitary_entry_tickets")
+}
+
+model StaffMember {
+  id        String         @id @default(uuid())
+  firstName String
+  lastName  String
+  dni       String         @unique
+  phone     String?
+  role      String
+  salary    Decimal        @db.Decimal(10, 2)
+  isActive  Boolean        @default(true)
+  startDate DateTime       @default(now())
+  notes     String?
+
+  payments  StaffPayment[]
+
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([dni])
+  @@index([role])
+  @@map("staff_members")
+}
+
+model StaffPayment {
+  id             String        @id @default(uuid())
+  staffMemberId  String
+  staffMember    StaffMember   @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
+  period         String
+  amount         Decimal       @db.Decimal(10, 2)
+  paymentDate    DateTime      @default(now())
+  paymentMethod  PaymentMethod @default(EFECTIVO)
+  receiptNumber  String?
+  status         String        @default("PAGADO")
+  notes          String?
+  cashMovementId String?
+  createdById    String?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([staffMemberId, period])
+  @@index([period])
+  @@map("staff_payments")
+}
+
+model Camera {
+  id          String   @id @default(uuid())
+  name        String
+  location    String
+  deviceId    String?
+  streamUrl   String?
+  streamType  String   @default("LOCAL_USB")
+  resolution  String   @default("HD_720P")
+  isActive    Boolean  @default(true)
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([location])
+  @@index([isActive])
+  @@map("cameras")
+}
+

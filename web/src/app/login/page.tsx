@@ -1,19 +1,29 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
-import { AlertCircle, Eye, EyeOff, KeyRound, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, KeyRound, CheckCircle2, Clock } from 'lucide-react';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('Micaela2026!');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [filledProfile, setFilledProfile] = useState<string>('admin');
   const { login } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('expired') === '1') {
+        setSessionExpired(true);
+      }
+    }
+  }, []);
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -42,10 +52,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="w-16 h-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-2xl mx-auto shadow-lg shadow-emerald-900/40">
-          MB
-        </div>
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <img src="/logo.png" alt="Logo Micaela Bastidas" className="w-20 h-20 rounded-full mx-auto shadow-xl border-2 border-amber-400" />
         <h2 className="mt-4 text-center text-2xl font-black tracking-tight text-white uppercase">
           Mercado de Abastos
         </h2>
@@ -56,6 +64,16 @@ export default function LoginPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
         <div className="bg-white py-8 px-6 shadow-xl rounded-2xl sm:px-10 border border-slate-100">
+          {sessionExpired && (
+            <div className="mb-4 p-3 bg-amber-50 border-l-4 border-amber-500 rounded text-amber-800 text-xs flex items-start">
+              <Clock className="w-4 h-4 mr-2 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Sesión Finalizada</span>
+                <span>Su sesión ha caducado por seguridad. Por favor, vuelva a ingresar sus credenciales para continuar.</span>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 rounded text-red-700 text-xs flex items-center">
               <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />

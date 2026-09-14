@@ -34,10 +34,23 @@ export class ObligationsController {
     return this.obligationsService.findByMerchant(merchantId);
   }
 
+  @Get('merchant/:merchantId/pending')
+  @ApiOperation({ summary: 'Obtener obligaciones pendientes y programadas con prevención de cobro duplicado' })
+  findPendingByMerchant(@Param('merchantId') merchantId: string) {
+    return this.obligationsService.getMerchantPendingObligations(merchantId);
+  }
+
   @Post('generate-monthly')
   @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
   @ApiOperation({ summary: 'Generar obligaciones mensuales de Alcabala y Agua para todos los comerciantes' })
   generateMonthly(@Body() body: { year: number; month: number }) {
     return this.obligationsService.generateMonthlyObligations(body.year, body.month);
+  }
+
+  @Post('generate-scheduled')
+  @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
+  @ApiOperation({ summary: 'Ejecutar programación automática diaria y mensual para todos los comerciantes activos' })
+  generateScheduled() {
+    return this.obligationsService.generateScheduledObligations();
   }
 }

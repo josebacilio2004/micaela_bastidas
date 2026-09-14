@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CashRegistersService } from './cash-registers.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -18,6 +18,12 @@ export class CashRegistersController {
   @ApiOperation({ summary: 'Obtener la caja abierta actualmente' })
   findCurrentActive() {
     return this.cashRegistersService.findCurrentActive();
+  }
+
+  @Get('daily-consolidated')
+  @ApiOperation({ summary: 'Reporte general diario consolidado de todos los servicios y cajas' })
+  getDailyConsolidated(@Query('date') date?: string) {
+    return this.cashRegistersService.getDailyConsolidated(date);
   }
 
   @Get()

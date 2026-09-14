@@ -5,6 +5,9 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/sync/sync_service.dart';
 import '../../cobranza/presentation/cobrar_screen.dart';
+import '../../cobranza/presentation/historial_cobros_screen.dart';
+import '../../padron/presentation/padron_list_screen.dart';
+import '../../padron/presentation/registrar_pagador_screen.dart';
 import '../../servicios_higienicos/presentation/sshh_counter_screen.dart';
 import '../../caja/presentation/caja_screen.dart';
 import '../../auth/presentation/login_screen.dart';
@@ -109,7 +112,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final todayFormatted = DateFormat("EEEE d 'de' MMMM, y", 'es_PE').format(DateTime.now());
+    String todayFormatted;
+    try {
+      todayFormatted = DateFormat("EEEE d 'de' MMMM, y", 'es_PE').format(DateTime.now());
+    } catch (_) {
+      todayFormatted = DateFormat("dd/MM/yyyy").format(DateTime.now());
+    }
 
     final totalToday = _dashboardData?['today']?['total'] ?? 0.0;
     final alcabalaToday = _dashboardData?['today']?['alcabala'] ?? 0.0;
@@ -120,10 +128,21 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Column(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('MICAELA BASTIDAS', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
-            Text(todayFormatted, style: const TextStyle(fontSize: 11, color: Colors.white70)),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.asset('assets/logo.png', width: 28, height: 28),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('MICAELA BASTIDAS', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
+                Text(todayFormatted, style: const TextStyle(fontSize: 10, color: Colors.white70)),
+              ],
+            ),
           ],
         ),
         actions: [
@@ -280,7 +299,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'S/ ${NumberFormat("#,##0.00", "es_PE").format(totalToday)}',
+                      _formatMoney(totalToday),
                       style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 16),
@@ -303,18 +322,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               const SizedBox(height: 24),
 
               const Text(
-                'OPERACIONES PRINCIPALES',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1),
+                'COBRANZAS & REGISTROS',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.1),
               ),
               const SizedBox(height: 12),
 
-              // 4. Botones de Acción (Grid 2x2)
               Row(
                 children: [
                   Expanded(
                     child: _actionButton(
-                      title: 'COBRAR (QR)',
-                      subtitle: 'Alcabala / Agua',
+                      title: 'COBRO RÁPIDO',
+                      subtitle: 'Escanear QR físico',
                       icon: Icons.qr_code_scanner,
                       color: AppTheme.primary,
                       onTap: () => Navigator.push(
@@ -326,13 +344,13 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _actionButton(
-                      title: 'ASISTENCIAS',
-                      subtitle: 'Modo Auditorio QR',
-                      icon: Icons.how_to_reg,
-                      color: const Color(0xFF0F766E),
+                      title: 'HISTORIAL LOCAL',
+                      subtitle: 'Cobros en este celular',
+                      icon: Icons.receipt_long,
+                      color: const Color(0xFF4F46E5),
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const AsistenciaScreen()),
+                        MaterialPageRoute(builder: (_) => const HistorialCobrosScreen()),
                       ),
                     ),
                   ),
@@ -342,6 +360,56 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
               Row(
                 children: [
+                  Expanded(
+                    child: _actionButton(
+                      title: 'PADRÓN MERCADO',
+                      subtitle: 'Socios & Ambulantes',
+                      icon: Icons.badge_outlined,
+                      color: const Color(0xFF0F766E),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const PadronListScreen()),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _actionButton(
+                      title: '+ NUEVO PAGADOR',
+                      subtitle: 'Registrar y generar QR',
+                      icon: Icons.person_add_alt_1,
+                      color: const Color(0xFF2563EB),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RegistrarPagadorScreen()),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+              const Text(
+                'SERVICIOS & CONTROL',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.1),
+              ),
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _actionButton(
+                      title: 'ASISTENCIAS QR',
+                      subtitle: 'Modo Auditorio',
+                      icon: Icons.how_to_reg,
+                      color: const Color(0xFFD97706),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AsistenciaScreen()),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: _actionButton(
                       title: 'SERVICIOS HIGIÉNICOS',
@@ -354,20 +422,19 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _actionButton(
-                      title: 'CAJA Y ARQUEO',
-                      subtitle: 'Cierre de turno',
-                      icon: Icons.account_balance_wallet,
-                      color: const Color(0xFFD97706),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const CajaScreen()),
-                      ),
-                    ),
-                  ),
                 ],
+              ),
+              const SizedBox(height: 12),
+
+              _actionButton(
+                title: 'CAJA Y ARQUEO DIARIO',
+                subtitle: 'Cierre de turno y conciliación',
+                icon: Icons.account_balance_wallet,
+                color: const Color(0xFF7C3AED),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CajaScreen()),
+                ),
               ),
             ],
           ),
@@ -376,13 +443,22 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     );
   }
 
+  String _formatMoney(dynamic value) {
+    try {
+      return 'S/ ${NumberFormat("#,##0.00", "es_PE").format(value)}';
+    } catch (_) {
+      final num n = (value is num) ? value : (num.tryParse(value?.toString() ?? '0') ?? 0);
+      return 'S/ ${n.toStringAsFixed(2)}';
+    }
+  }
+
   Widget _subStat(String label, dynamic value) {
     return Column(
       children: [
         Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10)),
         const SizedBox(height: 2),
         Text(
-          'S/ ${NumberFormat("#,##0.00", "es_PE").format(value)}',
+          _formatMoney(value),
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
         ),
       ],

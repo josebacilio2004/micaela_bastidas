@@ -108,6 +108,21 @@ export class PaymentsService {
       if (obligation.status === ObligationStatus.PAGADO) {
         throw new ConflictException('Esta obligación ya fue pagada anteriormente');
       }
+    } else if (dto.merchantId && dto.conceptId && dto.period) {
+      // Prevent duplicate payment for same concept and period
+      const alreadyPaid = await this.prisma.payment.findFirst({
+        where: {
+          merchantId: dto.merchantId,
+          conceptId: dto.conceptId,
+          period: dto.period,
+          isVoided: false,
+        },
+      });
+      if (alreadyPaid) {
+        throw new ConflictException(
+          `El comerciante ya tiene un pago registrado para este concepto en el período ${dto.period} (Comprobante: ${alreadyPaid.operationNumber}).`,
+        );
+      }
     }
 
     // 3. Resolve Active Cash Register if not explicitly specified

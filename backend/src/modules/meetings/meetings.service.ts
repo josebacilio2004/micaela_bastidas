@@ -6,14 +6,41 @@ import { MeetingStatus } from '@prisma/client';
 export class MeetingsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll() {
-    return this.prisma.meeting.findMany({
+  async findAll(filters?: { date?: string; status?: any }) {
+    const totalSocios = await this.prisma.merchant.count({
+      where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
+    });
+
+    const where: any = {};
+    if (filters?.date) {
+      try {
+        const dStr = filters.date.split('T')[0];
+        const startDate = new Date(`${dStr}T00:00:00.000Z`);
+        const endDate = new Date(`${dStr}T23:59:59.999Z`);
+        where.date = {
+          gte: startDate,
+          lte: endDate,
+        };
+      } catch (_) {}
+    }
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+
+    const meetings = await this.prisma.meeting.findMany({
+      where,
       include: {
         createdBy: { select: { fullName: true } },
         _count: { select: { attendances: true } },
       },
       orderBy: { date: 'desc' },
     });
+
+    return meetings.map((m) => ({
+      ...m,
+      totalEligible: totalSocios,
+      attendedCount: m._count.attendances,
+    }));
   }
 
   async findOne(id: string) {
@@ -31,10 +58,45 @@ export class MeetingsService {
       },
     });
     if (!meeting) throw new NotFoundException('Reunión no encontrada');
-    return meeting;
+
+    // Obtener todos los socios activos habilitados para el quórum
+    const allSocios = await this.prisma.merchant.findMany({
+      where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
+      include: { stall: true, merchantType: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    const attendedMerchantIds = new Set(meeting.attendances.map((a) => a.merchantId));
+    const absentMerchants = allSocios.filter((s) => !attendedMerchantIds.has(s.id));
+
+    const totalSocios = allSocios.length;
+    const attendedCount = meeting.attendances.length;
+    const absentCount = absentMerchants.length;
+    const quorumPercentage = totalSocios > 0 ? Number(((attendedCount / totalSocios) * 100).toFixed(1)) : 0;
+    const hasQuorum = quorumPercentage >= 50.0;
+
+    const sortedAttendances = [...meeting.attendances].sort((a, b) => {
+      const aName = `${a.merchant?.lastName || ''} ${a.merchant?.firstName || ''}`;
+      const bName = `${b.merchant?.lastName || ''} ${b.merchant?.firstName || ''}`;
+      return aName.localeCompare(bName, 'es');
+    });
+
+    return {
+      ...meeting,
+      totalEligible: totalSocios,
+      attended: sortedAttendances,
+      absent: absentMerchants,
+      quorum: {
+        totalSocios,
+        attendedCount,
+        absentCount,
+        quorumPercentage,
+        hasQuorum,
+      },
+    };
   }
 
-  async create(dto: { title: string; date: string; time: string; location: string; description?: string }, userId: string) {
+  async create(dto: { title: string; date: string; time: string; location: string; description?: string; status?: MeetingStatus }, userId: string) {
     return this.prisma.meeting.create({
       data: {
         title: dto.title,
@@ -42,10 +104,84 @@ export class MeetingsService {
         time: dto.time,
         location: dto.location,
         description: dto.description,
-        status: MeetingStatus.EN_CURSO,
+        status: dto.status || MeetingStatus.PROGRAMADA,
         createdById: userId,
       },
     });
+  }
+
+  async updateStatus(id: string, status: MeetingStatus) {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id },
+      include: { attendances: true },
+    });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    const updated = await this.prisma.meeting.update({
+      where: { id },
+      data: { status },
+    });
+
+    let finesCount = 0;
+    if (status === MeetingStatus.FINALIZADA) {
+      // Find all active socios who did not attend
+      const allSocios = await this.prisma.merchant.findMany({
+        where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      });
+
+      const attendedIds = new Set(meeting.attendances.map((a) => a.merchantId));
+      const absentSocios = allSocios.filter((s) => !attendedIds.has(s.id));
+
+      const faltaConcept = await this.prisma.paymentConcept.findFirst({
+        where: { code: 'MULTA_ASAMBLEA' },
+      });
+
+      if (faltaConcept && absentSocios.length > 0) {
+        const period = `FALTA-${meeting.id.slice(0, 8)}`;
+        const mDate = new Date(meeting.date);
+        const due = new Date(meeting.date);
+        due.setDate(due.getDate() + 7);
+
+        for (const socio of absentSocios) {
+          const exists = await this.prisma.paymentObligation.findUnique({
+            where: {
+              merchantId_conceptId_period: {
+                merchantId: socio.id,
+                conceptId: faltaConcept.id,
+                period,
+              },
+            },
+          });
+
+          if (!exists) {
+            await this.prisma.paymentObligation.create({
+              data: {
+                merchantId: socio.id,
+                conceptId: faltaConcept.id,
+                period,
+                year: mDate.getFullYear(),
+                month: mDate.getMonth() + 1,
+                dueDate: due,
+                amount: 50.00,
+                status: 'PENDIENTE',
+              },
+            });
+            finesCount++;
+          }
+        }
+      }
+    }
+
+    return {
+      ...updated,
+      finesGenerated: finesCount,
+      fineAmount: 50.00,
+      message:
+        status === MeetingStatus.FINALIZADA
+          ? `Reunión finalizada. Se generaron ${finesCount} multas por inasistencia de S/ 50.00 a socios ausentes.`
+          : 'Estado de reunión actualizado con éxito',
+    };
   }
 
   async registerAttendance(
@@ -88,6 +224,66 @@ export class MeetingsService {
       throw new ConflictException(`Este socio ya registró asistencia a las ${timeStr}`);
     }
 
+    // Check tardiness (>15 minutes after start)
+    let isLate = false;
+    let lateMinutes = 0;
+    let fineGenerated = false;
+
+    if (meeting.date && meeting.time) {
+      try {
+        const [hStr, mStr] = (meeting.time || '00:00').split(':');
+        const scheduledTime = new Date(meeting.date);
+        scheduledTime.setHours(parseInt(hStr, 10) || 0, parseInt(mStr, 10) || 0, 0, 0);
+
+        const now = new Date();
+        const diffMs = now.getTime() - scheduledTime.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins > 15) {
+          isLate = true;
+          lateMinutes = diffMins;
+
+          // Find concept MULTA_TARDANZA
+          const tardanzaConcept = await this.prisma.paymentConcept.findFirst({
+            where: { code: 'MULTA_TARDANZA' },
+          });
+
+          if (tardanzaConcept) {
+            const period = `TARD-${meeting.id.slice(0, 8)}`;
+            const obExists = await this.prisma.paymentObligation.findUnique({
+              where: {
+                merchantId_conceptId_period: {
+                  merchantId: merchant.id,
+                  conceptId: tardanzaConcept.id,
+                  period,
+                },
+              },
+            });
+
+            if (!obExists) {
+              const due = new Date(meeting.date);
+              due.setDate(due.getDate() + 7);
+              await this.prisma.paymentObligation.create({
+                data: {
+                  merchantId: merchant.id,
+                  conceptId: tardanzaConcept.id,
+                  period,
+                  year: scheduledTime.getFullYear(),
+                  month: scheduledTime.getMonth() + 1,
+                  dueDate: due,
+                  amount: 20.00,
+                  status: 'PENDIENTE',
+                },
+              });
+              fineGenerated = true;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error calculando tardanza:', err);
+      }
+    }
+
     const attendance = await this.prisma.attendanceEvent.create({
       data: {
         meetingId,
@@ -102,10 +298,18 @@ export class MeetingsService {
       },
     });
 
+    const msg = isLate
+      ? `Asistencia con tardanza (${lateMinutes} min tarde). Se generó automáticamente una multa de S/ 20.00.`
+      : 'Asistencia puntual registrada con éxito';
+
     return {
-      message: 'Asistencia registrada con éxito',
+      message: msg,
       attendance,
       merchant,
+      isLate,
+      lateMinutes,
+      fineGenerated,
+      fineAmount: isLate ? 20.00 : 0,
     };
   }
 

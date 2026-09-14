@@ -37,7 +37,26 @@ export class MerchantsController {
     return this.merchantsService.findTypes();
   }
 
-  
+  @Get('categories')
+  @ApiOperation({ summary: 'Listar rubros / giros comerciales' })
+  findCategories() {
+    return this.merchantsService.findCategories();
+  }
+
+  @Post('categories')
+  @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
+  @ApiOperation({ summary: 'Registrar nuevo rubro comercial' })
+  createCategory(@Body() body: { name: string; description?: string }) {
+    return this.merchantsService.createCategory(body.name, body.description);
+  }
+
+  @Delete('categories/:id')
+  @Roles(RoleType.ADMINISTRADOR)
+  @ApiOperation({ summary: 'Desactivar rubro comercial' })
+  deleteCategory(@Param('id') id: string) {
+    return this.merchantsService.deleteCategory(id);
+  }
+
   @Get('merchants/qr/:qrCode')
   @ApiOperation({ summary: 'Búsqueda ultrarrápida de comerciante por QR o DNI' })
   findByQr(@Param('qrCode') qrCode: string) {

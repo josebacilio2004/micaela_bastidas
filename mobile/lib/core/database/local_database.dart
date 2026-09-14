@@ -19,7 +19,7 @@ class LocalDatabase {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -44,7 +44,7 @@ class LocalDatabase {
       )
     ''');
 
-    // 2. Padrón de comerciantes en caché local con código QR
+    // 2. Padrón de comerciantes en caché local con código QR y foto
     await db.execute('''
       CREATE TABLE IF NOT EXISTS cached_merchants (
         id TEXT PRIMARY KEY,
@@ -55,7 +55,8 @@ class LocalDatabase {
         type_name TEXT,
         stall_code TEXT,
         business_category TEXT,
-        qr_code TEXT UNIQUE
+        qr_code TEXT UNIQUE,
+        photo_url TEXT
       )
     ''');
 
@@ -66,6 +67,8 @@ class LocalDatabase {
         title TEXT,
         description TEXT,
         scheduled_at TEXT,
+        time TEXT,
+        location TEXT,
         status TEXT,
         total_eligible INTEGER
       )
@@ -98,13 +101,57 @@ class LocalDatabase {
         verified_by TEXT
       )
     ''');
+
+    // 6. Obligaciones / Cuotas pendientes en caché local
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_obligations (
+        id TEXT PRIMARY KEY,
+        merchant_id TEXT,
+        concept_id TEXT,
+        concept_code TEXT,
+        concept_name TEXT,
+        period TEXT,
+        amount REAL,
+        status TEXT,
+        due_date TEXT
+      )
+    ''');
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await _createDB(db, newVersion);
       try {
         await db.execute('ALTER TABLE cached_merchants ADD COLUMN qr_code TEXT');
+      } catch (_) {}
+    }
+    if (oldVersion < 3) {
+      try {
+        await db.execute('ALTER TABLE cached_meetings ADD COLUMN time TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE cached_meetings ADD COLUMN location TEXT');
+      } catch (_) {}
+    }
+    if (oldVersion < 4) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS cached_obligations (
+            id TEXT PRIMARY KEY,
+            merchant_id TEXT,
+            concept_id TEXT,
+            concept_code TEXT,
+            concept_name TEXT,
+            period TEXT,
+            amount REAL,
+            status TEXT,
+            due_date TEXT
+          )
+        ''');
+      } catch (_) {}
+    }
+    if (oldVersion < 5) {
+      try {
+        await db.execute('ALTER TABLE cached_merchants ADD COLUMN photo_url TEXT');
       } catch (_) {}
     }
   }
@@ -117,6 +164,7 @@ class LocalDatabase {
     for (var m in merchants) {
       final dni = (m['dni'] ?? '').toString();
       final qr = (m['qrCode'] ?? 'MB-QR-$dni').toString();
+      final photo = (m['photoUrl'] ?? m['photo_url'] ?? '').toString();
       batch.insert(
         'cached_merchants',
         {
@@ -129,6 +177,7 @@ class LocalDatabase {
           'stall_code': m['stall']?['code'] ?? '',
           'business_category': m['businessCategory'] ?? '',
           'qr_code': qr,
+          'photo_url': photo,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -169,6 +218,7 @@ class LocalDatabase {
         'stall': m['stall_code'].toString().isNotEmpty ? {'code': m['stall_code']} : null,
         'businessCategory': m['business_category'],
         'qrCode': m['qr_code'],
+        'photoUrl': m['photo_url'] ?? '',
       };
     }
     return null;
@@ -188,10 +238,113 @@ class LocalDatabase {
     );
   }
 
-  // --- PAGOS OFFLINE ---
   Future<int> insertOfflinePayment(Map<String, dynamic> row) async {
     final db = await instance.database;
     return await db.insert('offline_payments', row, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> insertMerchantLocal(Map<String, dynamic> m) async {
+    final db = await instance.database;
+    final dni = (m['dni'] ?? '').toString();
+    final qr = (m['qrCode'] ?? 'MB-QR-$dni').toString();
+    await db.insert(
+      'cached_merchants',
+      {
+        'id': m['id'],
+        'internal_code': m['internalCode'] ?? '',
+        'first_name': m['firstName'] ?? '',
+        'last_name': m['lastName'] ?? '',
+        'dni': dni,
+        'type_name': m['merchantType']?['name'] ?? m['typeName'] ?? 'Socio',
+        'stall_code': m['stall']?['code'] ?? m['stallCode'] ?? '',
+        'business_category': m['businessCategory'] ?? '',
+        'qr_code': qr,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAllCachedMerchants({String? typeFilter, String? search}) async {
+    final db = await instance.database;
+    String whereClause = '1=1';
+    List<dynamic> whereArgs = [];
+
+    if (typeFilter != null && typeFilter.isNotEmpty && typeFilter != 'ALL') {
+      if (typeFilter == 'SOCIO') {
+        whereClause += ' AND (type_name LIKE ? OR type_name LIKE ?)';
+        whereArgs.addAll(['%Socio%', '%Titular%']);
+      } else if (typeFilter == 'AMBULANTE_FIJO') {
+        whereClause += ' AND (type_name LIKE ?)';
+        whereArgs.add('%Fijo%');
+      } else if (typeFilter == 'AMBULANTE_TEMPORAL') {
+        whereClause += ' AND (type_name LIKE ?)';
+        whereArgs.add('%Temporal%');
+      }
+    }
+
+    if (search != null && search.trim().isNotEmpty) {
+      final s = '%${search.trim()}%';
+      whereClause += ' AND (dni LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR stall_code LIKE ? OR internal_code LIKE ? OR qr_code LIKE ?)';
+      whereArgs.addAll([s, s, s, s, s, s]);
+    }
+
+    return await db.query(
+      'cached_merchants',
+      where: whereClause,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      orderBy: 'last_name ASC, first_name ASC',
+      limit: 100,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAllLocalPayments({String? filter}) async {
+    final db = await instance.database;
+    String? whereClause;
+    List<dynamic>? whereArgs;
+
+    if (filter == 'PENDIENTE') {
+      whereClause = 'sync_status = ? OR sync_status = ?';
+      whereArgs = ['PENDIENTE', 'ERROR'];
+    } else if (filter == 'SINCRONIZADO') {
+      whereClause = 'sync_status = ?';
+      whereArgs = ['SINCRONIZADO'];
+    }
+
+    return await db.query(
+      'offline_payments',
+      where: whereClause,
+      whereArgs: whereArgs,
+      orderBy: 'created_at DESC',
+      limit: 150,
+    );
+  }
+
+  Future<Map<String, dynamic>> getLocalPaymentsSummary() async {
+    final db = await instance.database;
+    final now = DateTime.now();
+    final todayPrefix = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final totalTodayRes = await db.rawQuery(
+      "SELECT SUM(amount) as total, COUNT(*) as count FROM offline_payments WHERE created_at LIKE '$todayPrefix%'",
+    );
+    final pendingRes = await db.rawQuery(
+      "SELECT COUNT(*) as pending FROM offline_payments WHERE sync_status IN ('PENDIENTE', 'ERROR')",
+    );
+    final syncedRes = await db.rawQuery(
+      "SELECT COUNT(*) as synced FROM offline_payments WHERE sync_status = 'SINCRONIZADO'",
+    );
+
+    final totalToday = (totalTodayRes.first['total'] as num?)?.toDouble() ?? 0.0;
+    final countToday = (totalTodayRes.first['count'] as num?)?.toInt() ?? 0;
+    final pendingCount = (pendingRes.first['pending'] as num?)?.toInt() ?? 0;
+    final syncedCount = (syncedRes.first['synced'] as num?)?.toInt() ?? 0;
+
+    return {
+      'totalToday': totalToday,
+      'countToday': countToday,
+      'pendingCount': pendingCount,
+      'syncedCount': syncedCount,
+    };
   }
 
   Future<List<Map<String, dynamic>>> getPendingPayments() async {
@@ -219,20 +372,93 @@ class LocalDatabase {
     final db = await instance.database;
     final batch = db.batch();
     for (var m in meetings) {
+      final scheduledAt = (m['date'] ?? m['scheduledAt'] ?? m['scheduled_at'] ?? '').toString();
+      final timeStr = (m['time'] ?? '').toString();
+      final locStr = (m['location'] ?? '').toString();
       batch.insert(
         'cached_meetings',
         {
-          'id': m['id'],
+          'id': m['id'].toString(),
           'title': m['title'] ?? '',
           'description': m['description'] ?? '',
-          'scheduled_at': m['scheduledAt'] ?? '',
+          'scheduled_at': scheduledAt,
+          'time': timeStr,
+          'location': locStr,
           'status': m['status'] ?? 'PROGRAMADA',
-          'total_eligible': m['totalEligible'] ?? 350,
+          'total_eligible': m['totalEligible'] ?? m['total_eligible'] ?? 350,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
     await batch.commit(noResult: true);
+  }
+
+  Future<void> cacheAttendances(String meetingId, List<dynamic> attendances) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (var a in attendances) {
+      final merchantId = a['merchantId'] ?? a['merchant']?['id'] ?? a['id'];
+      final dni = a['dni'] ?? a['merchant']?['dni'] ?? '';
+      final scannedAt = a['scannedAt'] ?? a['scanned_at'] ?? DateTime.now().toIso8601String();
+      if (merchantId != null) {
+        batch.insert(
+          'cached_attendances',
+          {
+            'meeting_id': meetingId,
+            'merchant_id': merchantId.toString(),
+            'dni': dni.toString(),
+            'scanned_at': scannedAt.toString(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> getMeetingAttendanceLists(String meetingId) async {
+    final db = await instance.database;
+
+    // 1. Presentes en la reunión
+    final attendedRaw = await db.rawQuery('''
+      SELECT 
+        ca.merchant_id as id,
+        ca.scanned_at,
+        ca.dni,
+        COALESCE(cm.first_name, '') as first_name,
+        COALESCE(cm.last_name, '') as last_name,
+        COALESCE(cm.stall_code, 'Sin puesto') as stall_code,
+        COALESCE(cm.type_name, 'Socio') as type_name,
+        COALESCE(cm.business_category, '') as business_category
+      FROM cached_attendances ca
+      LEFT JOIN cached_merchants cm ON ca.merchant_id = cm.id
+      WHERE ca.meeting_id = ?
+      ORDER BY ca.scanned_at DESC
+    ''', [meetingId]);
+
+    // 2. Ausentes (Socios activos que aún no están registrados en la reunión)
+    final absentRaw = await db.rawQuery('''
+      SELECT 
+        cm.id,
+        cm.first_name,
+        cm.last_name,
+        cm.dni,
+        COALESCE(cm.stall_code, 'Sin puesto') as stall_code,
+        cm.type_name,
+        cm.business_category,
+        cm.qr_code
+      FROM cached_merchants cm
+      WHERE (cm.type_name LIKE '%Socio%' OR cm.type_name LIKE '%Titular%')
+        AND cm.id NOT IN (
+          SELECT merchant_id FROM cached_attendances WHERE meeting_id = ?
+        )
+      ORDER BY cm.last_name ASC, cm.first_name ASC
+    ''', [meetingId]);
+
+    return {
+      'attended': attendedRaw.map((e) => Map<String, dynamic>.from(e)).toList(),
+      'absent': absentRaw.map((e) => Map<String, dynamic>.from(e)).toList(),
+    };
   }
 
   Future<List<Map<String, dynamic>>> getCachedMeetings() async {
@@ -357,5 +583,85 @@ class LocalDatabase {
     final pCount = Sqflite.firstIntValue(pRes) ?? 0;
     final aCount = Sqflite.firstIntValue(aRes) ?? 0;
     return pCount + aCount;
+  }
+
+  // --- OBLIGACIONES & CUOTAS PROGRAMADAS ---
+  Future<void> cacheObligations(List<dynamic> obligations) async {
+    final db = await instance.database;
+    final batch = db.batch();
+    for (var o in obligations) {
+      final id = o['id']?.toString() ?? '';
+      if (id.isEmpty) continue;
+      batch.insert(
+        'cached_obligations',
+        {
+          'id': id,
+          'merchant_id': (o['merchantId'] ?? o['merchant_id'] ?? '').toString(),
+          'concept_id': (o['conceptId'] ?? o['concept_id'] ?? o['concept']?['id'] ?? '').toString(),
+          'concept_code': (o['concept']?['code'] ?? o['concept_code'] ?? '').toString(),
+          'concept_name': (o['concept']?['name'] ?? o['concept_name'] ?? 'Cuota').toString(),
+          'period': (o['period'] ?? '').toString(),
+          'amount': (num.tryParse(o['amount']?.toString() ?? '0') ?? 0.0).toDouble(),
+          'status': (o['status'] ?? 'PENDIENTE').toString(),
+          'due_date': (o['dueDate'] ?? o['due_date'] ?? '').toString(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getMerchantPendingObligations(String merchantId) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      'cached_obligations',
+      where: 'merchant_id = ? AND status = ?',
+      whereArgs: [merchantId, 'PENDIENTE'],
+      orderBy: 'due_date ASC, period ASC',
+    );
+    return rows.map((r) => {
+      'id': r['id'],
+      'merchantId': r['merchant_id'],
+      'conceptId': r['concept_id'],
+      'concept': {
+        'id': r['concept_id'],
+        'code': r['concept_code'],
+        'name': r['concept_name'],
+      },
+      'period': r['period'],
+      'amount': r['amount'],
+      'status': r['status'],
+      'dueDate': r['due_date'],
+    }).toList();
+  }
+
+  Future<void> markObligationAsPaidLocal(String obligationId) async {
+    final db = await instance.database;
+    await db.update(
+      'cached_obligations',
+      {'status': 'PAGADO'},
+      where: 'id = ?',
+      whereArgs: [obligationId],
+    );
+  }
+
+  Future<Set<String>> getOfflinePaidObligationIds(String merchantId) async {
+    final db = await instance.database;
+    final rows = await db.query(
+      'offline_payments',
+      columns: ['obligation_id'],
+      where: 'merchant_id = ? AND obligation_id IS NOT NULL',
+      whereArgs: [merchantId],
+    );
+    return rows
+        .map((r) => r['obligation_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Future<void> clearAllOfflinePayments() async {
+    final db = await instance.database;
+    await db.delete('offline_payments');
+    await db.delete('cached_obligations');
   }
 }
