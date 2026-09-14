@@ -1,4 +1,4 @@
-﻿# Guia de Instalacion y Despliegue en la Computadora del Mercado
+# Guia de Instalacion y Despliegue en la Computadora del Mercado
 ## Mercado de Abastos Micaela Bastidas
 
 Esta guia describe los pasos necesarios para instalar y poner en marcha el sistema completo en la maquina fisica del Mercado Micaela Bastidas.
@@ -68,7 +68,7 @@ docker exec micaela_backend npx prisma db push
 
 **2. Cargar datos iniciales (Roles, Administrador, Sectores, Puestos y Conceptos de Cobranza):**
 ```bash
-docker exec micaela_backend npx prisma db seed
+docker exec micaela_backend node dist/prisma/seed.js
 ```
 
 ---
