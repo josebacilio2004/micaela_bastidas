@@ -1,9 +1,11 @@
-﻿# --- STAGE 1: Builder ---
+# --- STAGE 1: Builder ---
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl libc6-compat
+RUN apk update --retries 3 || true && \
+    (apk add --no-cache --retries 5 openssl libc6-compat || \
+     (sed -i 's/dl-cdn.alpinelinux.org/uk.alpinelinux.org/g' /etc/apk/repositories && apk add --no-cache openssl libc6-compat))
 
 COPY package*.json ./
 COPY prisma ./prisma/
@@ -20,7 +22,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl libc6-compat wget curl
+RUN apk update --retries 3 || true && \
+    (apk add --no-cache --retries 5 openssl libc6-compat || \
+     (sed -i 's/dl-cdn.alpinelinux.org/uk.alpinelinux.org/g' /etc/apk/repositories && apk add --no-cache openssl libc6-compat))
 
 ENV NODE_ENV=production
 
