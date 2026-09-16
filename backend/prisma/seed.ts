@@ -91,6 +91,7 @@ async function main() {
   // 3. Merchant Types
   const merchantTypes = [
     { code: MerchantTypeEnum.SOCIO, name: 'Socio Titular', description: 'Comerciante titular socio del mercado con puesto asignado' },
+    { code: MerchantTypeEnum.INQUILINO, name: 'Inquilino', description: 'Arrendatario de puesto comercial o módulo del mercado' },
     { code: MerchantTypeEnum.AMBULANTE_FIJO, name: 'Ambulante Fijo', description: 'Comerciante con espacio regular asignado en pasajes autorizados' },
     { code: MerchantTypeEnum.AMBULANTE_TEMPORAL, name: 'Ambulante Temporal', description: 'Comerciante rotativo o de días de feria' },
   ];
@@ -152,8 +153,17 @@ async function main() {
   const concepts = [
     { code: 'ALCABALA', name: 'Alcabala / Derecho de Puesto', periodicity: Periodicity.MENSUAL, description: 'Cuota de mantenimiento y ocupación del puesto o espacio' },
     { code: 'AGUA', name: 'Servicio de Agua Potable', periodicity: Periodicity.MENSUAL, description: 'Consumo y mantenimiento de redes sanitarias de agua' },
+    { code: 'ALQUILER_INQUILINO', name: 'Alquiler de Puesto (Inquilinos)', periodicity: Periodicity.MENSUAL, description: 'Canon de arrendamiento para inquilinos del mercado' },
+    { code: 'AGUA_INQUILINO', name: 'Agua Potable Inquilinos', periodicity: Periodicity.MENSUAL, description: 'Consumo de agua para puestos de inquilinos' },
+    { code: 'TICKET_AMBULANTE_1', name: 'Ticket Ambulante S/ 1.00', periodicity: Periodicity.DIARIO, description: 'Tarifa básica para ambulantes de paso con canasta' },
+    { code: 'TICKET_AMBULANTE_2', name: 'Ticket Ambulante S/ 2.00', periodicity: Periodicity.DIARIO, description: 'Tarifa intermedia para ambulantes con carretilla' },
+    { code: 'TICKET_AMBULANTE_3', name: 'Ticket Ambulante S/ 3.00', periodicity: Periodicity.DIARIO, description: 'Tarifa completa para ambulantes con puesto temporal' },
     { code: 'MICCIONARIO', name: 'Uso de Miccionario', periodicity: Periodicity.POR_USO, description: 'Uso de urinario en servicios higiénicos' },
     { code: 'RETRETE', name: 'Uso de Retrete', periodicity: Periodicity.POR_USO, description: 'Uso de inodoro/retrete en servicios higiénicos' },
+    { code: 'MULTA_FAENA', name: 'Multa por Inasistencia a Faena', periodicity: Periodicity.POR_USO, description: 'Sanción económica por no participar en la jornada de limpieza' },
+    { code: 'PUBLICIDAD_PERIFONEO', name: 'Publicidad por Perifoneo', periodicity: Periodicity.DIARIO, description: 'Emisión de spots de audio en altavoces del mercado' },
+    { code: 'PUBLICIDAD_BANNER', name: 'Publicidad Banners y Carteles', periodicity: Periodicity.MENSUAL, description: 'Exhibición publicitaria en pasajes y muros del mercado' },
+    { code: 'FONDO_ROTATORIO_COBRANZA', name: 'Recuperación Fondo Rotatorio', periodicity: Periodicity.POR_USO, description: 'Cobranza y amortización de préstamos a comerciantes' },
   ];
   const createdConcepts: Record<string, any> = {};
   for (const c of concepts) {

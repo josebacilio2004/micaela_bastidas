@@ -17,6 +17,10 @@ import {
   Smartphone,
   Coins,
   Droplets,
+  FolderOpen,
+  Sparkles,
+  Megaphone,
+  HandCoins,
   UserCog,
   Video,
   ChevronLeft,
@@ -34,38 +38,42 @@ interface NavSection {
 
 const navigationSections: NavSection[] = [
   {
-    title: 'Recaudación y Cobranzas',
-    items: [
-      { name: 'Dashboard General', href: '/', icon: LayoutDashboard },
-      { name: 'Cobranza Alcabala', href: '/alcabala', icon: Coins },
-      { name: 'Cobranza de Agua', href: '/agua', icon: Droplets },
-      { name: 'Servicios Higiénicos', href: '/servicios-higienicos', icon: Bath },
-      { name: 'Caja y Cierres Diarios', href: '/caja', icon: Wallet },
-      { name: 'Pagos al Personal', href: '/personal', icon: UserCog },
-      { name: 'Historial de Pagos', href: '/pagos', icon: Receipt },
-    ],
-  },
-  {
-    title: 'Padrón y Espacios',
+    title: '1. Administración',
     items: [
       { name: 'Padrón Comerciantes', href: '/padron', icon: Users },
       { name: 'Puestos y Espacios', href: '/puestos', icon: Store },
+      { name: 'Gestión Documental', href: '/documentos', icon: FolderOpen },
+      { name: 'Reuniones y Asambleas', href: '/reuniones', icon: Calendar },
+      { name: 'Faenas de Limpieza', href: '/faenas', icon: Sparkles },
+      { name: 'Publicidad & J.A.R.V.I.S', href: '/publicidad', icon: Megaphone },
+      { name: 'Personal y Planilla', href: '/personal', icon: UserCog },
+    ],
+  },
+  {
+    title: '2. Tesorería y Caja',
+    items: [
+      { name: 'Caja y Cierres Diarios', href: '/caja', icon: Wallet },
+      { name: 'Cobranza Alcabala', href: '/alcabala', icon: Coins },
+      { name: 'Cobranza de Agua', href: '/agua', icon: Droplets },
+      { name: 'Servicios Higiénicos', href: '/servicios-higienicos', icon: Bath },
+      { name: 'Fondo Rotatorio', href: '/fondo-rotatorio', icon: HandCoins },
+      { name: 'Historial de Pagos', href: '/pagos', icon: Receipt },
       { name: 'Tarifas Vigentes', href: '/tarifas', icon: Sliders },
     ],
   },
   {
-    title: 'Asambleas y Operación',
+    title: '3. Seguridad y Monitoreo',
     items: [
-      { name: 'Reuniones y Asistencia', href: '/reuniones', icon: Calendar },
-      { name: 'Sincronización Móvil', href: '/sincronizacion', icon: Smartphone },
-      { name: 'Reportes y Balances', href: '/reportes', icon: FileSpreadsheet },
+      { name: 'Cámaras de Seguridad CCTV', href: '/camaras', icon: Video },
     ],
   },
   {
-    title: 'Sistema y Seguridad',
+    title: '4. Reportes y Gobierno',
     items: [
-      { name: 'Cámaras de Seguridad CCTV', href: '/camaras', icon: Video },
+      { name: 'Dashboard General', href: '/', icon: LayoutDashboard },
+      { name: 'Reportes y Balances', href: '/reportes', icon: FileSpreadsheet },
       { name: 'Auditoría del Sistema', href: '/auditoria', icon: History },
+      { name: 'Sincronización Móvil', href: '/sincronizacion', icon: Smartphone },
       { name: 'Gestión Usuarios', href: '/usuarios', icon: Shield },
     ],
   },

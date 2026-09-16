@@ -104,6 +104,7 @@ export class MerchantsService {
         stallId: cleanStallId,
         businessCategory: cleanCategory,
         status: dto.status || MerchantStatus.ACTIVO,
+        memberCondition: dto.memberCondition || 'NO_APLICA',
         observations: dto.observations,
         createdById: userId,
       },
@@ -169,6 +170,38 @@ export class MerchantsService {
               month,
               dueDate: monthDueDate,
               amount: getAmt(aguaConcept.id, 6.00),
+              status: 'PENDIENTE',
+            },
+          });
+        }
+      } else if (merchant.merchantType.code === 'INQUILINO') {
+        const alquilerConcept = await this.prisma.paymentConcept.findFirst({
+          where: { code: 'ALQUILER_INQUILINO' },
+        });
+        if (alquilerConcept) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: merchant.id,
+              conceptId: alquilerConcept.id,
+              period: monthPeriod,
+              year,
+              month,
+              dueDate: monthDueDate,
+              amount: getAmt(alquilerConcept.id, 150.00),
+              status: 'PENDIENTE',
+            },
+          });
+        }
+        if (aguaConcept) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: merchant.id,
+              conceptId: aguaConcept.id,
+              period: monthPeriod,
+              year,
+              month,
+              dueDate: monthDueDate,
+              amount: getAmt(aguaConcept.id, 10.00),
               status: 'PENDIENTE',
             },
           });
@@ -271,6 +304,7 @@ export class MerchantsService {
         stallId: cleanStallId,
         businessCategory: cleanCategory,
         status: dto.status,
+        memberCondition: dto.memberCondition,
         observations: dto.observations,
         updatedById: userId,
       },

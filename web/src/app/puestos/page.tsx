@@ -69,10 +69,14 @@ export default function PuestosPage() {
               margin: 0 !important;
               padding: 8mm !important;
               background: white !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             .carnet-grid-card {
               break-inside: avoid !important;
               page-break-inside: avoid !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
           }
         `,

@@ -21,6 +21,10 @@ import { MeetingsModule } from './modules/meetings/meetings.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { CamerasModule } from './modules/cameras/cameras.module';
+import { DocumentsModule } from './modules/documents/documents.module';
+import { FaenasModule } from './modules/faenas/faenas.module';
+import { AdvertisingModule } from './modules/advertising/advertising.module';
+import { RevolvingFundModule } from './modules/revolving-fund/revolving-fund.module';
 
 @Module({
   imports: [
@@ -46,6 +50,10 @@ import { CamerasModule } from './modules/cameras/cameras.module';
     UploadsModule,
     StaffModule,
     CamerasModule,
+    DocumentsModule,
+    FaenasModule,
+    AdvertisingModule,
+    RevolvingFundModule,
   ],
 })
 export class AppModule {}

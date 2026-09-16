@@ -1,6 +1,6 @@
 import { IsOptional, IsString, Length, IsEnum } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { MerchantStatus } from '@prisma/client';
+import { MerchantStatus, MemberCondition } from '@prisma/client';
 
 export class UpdateMerchantDto {
   @ApiPropertyOptional()
@@ -53,6 +53,11 @@ export class UpdateMerchantDto {
   @IsEnum(MerchantStatus)
   @IsOptional()
   status?: MerchantStatus;
+
+  @ApiPropertyOptional({ enum: MemberCondition })
+  @IsEnum(MemberCondition)
+  @IsOptional()
+  memberCondition?: MemberCondition;
 
   @ApiPropertyOptional()
   @IsString()

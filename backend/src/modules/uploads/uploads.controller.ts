@@ -144,4 +144,61 @@ export class UploadsController {
       uploadedAt: new Date(),
     };
   }
+
+  @Post('merchant/:id/dni-document')
+  @ApiOperation({ summary: 'Subir escaneo de DNI del comerciante (PDF o imagen)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          cb(null, uploadDirDocs);
+        },
+        filename: (req, file, cb) => {
+          const merchantId = req.params.id || 'merchant';
+          const ext = extname(file.originalname).toLowerCase();
+          const cleanName = `dni-${merchantId}-${Date.now()}${ext}`;
+          cb(null, cleanName);
+        },
+      }),
+      limits: { fileSize: 15 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.match(/\/(pdf|jpg|jpeg|png)$/)) {
+          return cb(new BadRequestException('Solo se permiten archivos PDF o imágenes (JPG, PNG)'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadMerchantDniDocument(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No se ha proporcionado ningún archivo');
+    }
+
+    const dniDocumentUrl = `/api/uploads/merchants/documents/${file.filename}`;
+    await this.prisma.merchant.update({
+      where: { id },
+      data: {
+        dniDocumentUrl,
+      },
+    });
+
+    return {
+      message: 'Documento DNI subido con éxito',
+      dniDocumentUrl,
+      fileName: file.filename,
+      uploadedAt: new Date(),
+    };
+  }
 }
