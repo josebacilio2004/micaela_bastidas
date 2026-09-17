@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -18,8 +18,15 @@ export class FaenasController {
   }
 
   @Get(':id')
+  @ApiOperation({ summary: 'Obtener detalle de una faena' })
   async findOne(@Param('id') id: string) {
     return this.faenasService.findOne(id);
+  }
+
+  @Get(':id/fines')
+  @ApiOperation({ summary: 'Listar multas generadas para la faena' })
+  async getFines(@Param('id') id: string) {
+    return this.faenasService.getFines(id);
   }
 
   @Post()
@@ -34,6 +41,18 @@ export class FaenasController {
       fineAmount: body.fineAmount,
       createdById: user?.id,
     });
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Editar datos de una faena' })
+  async update(@Param('id') id: string, @Body() body: any) {
+    return this.faenasService.update(id, body);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar una faena programada' })
+  async delete(@Param('id') id: string) {
+    return this.faenasService.delete(id);
   }
 
   @Post(':id/attendance')

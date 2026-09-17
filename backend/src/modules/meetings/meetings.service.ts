@@ -110,6 +110,67 @@ export class MeetingsService {
     });
   }
 
+  async update(id: string, dto: { title?: string; date?: string; time?: string; location?: string; description?: string }) {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id } });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    const data: any = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.date !== undefined) data.date = new Date(dto.date);
+    if (dto.time !== undefined) data.time = dto.time;
+    if (dto.location !== undefined) data.location = dto.location;
+    if (dto.description !== undefined) data.description = dto.description;
+
+    return this.prisma.meeting.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async delete(id: string) {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id },
+      include: { attendances: true },
+    });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    if (meeting.status === MeetingStatus.FINALIZADA) {
+      throw new BadRequestException('No se puede eliminar una asamblea que ya ha sido finalizada y cuyas multas o actas ya fueron procesadas.');
+    }
+
+    return this.prisma.meeting.delete({
+      where: { id },
+    });
+  }
+
+  async getFines(meetingId: string) {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    const period = `FALTA-${meeting.id.slice(0, 8)}`;
+    const fines = await this.prisma.paymentObligation.findMany({
+      where: {
+        period,
+        concept: { code: 'MULTA_ASAMBLEA' },
+      },
+      include: {
+        merchant: {
+          include: {
+            stall: true,
+            sector: true,
+          },
+        },
+        payment: true,
+      },
+      orderBy: [
+        { merchant: { lastName: 'asc' } },
+        { merchant: { firstName: 'asc' } },
+      ],
+    });
+
+    return fines;
+  }
+
   async updateStatus(id: string, status: MeetingStatus) {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id },
@@ -126,16 +187,28 @@ export class MeetingsService {
     if (status === MeetingStatus.FINALIZADA) {
       // Find all active socios who did not attend
       const allSocios = await this.prisma.merchant.findMany({
-        where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
+        where: { merchantType: { code: 'SOCIO' }, isDeleted: false, status: 'ACTIVO' },
         orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       });
 
       const attendedIds = new Set(meeting.attendances.map((a) => a.merchantId));
       const absentSocios = allSocios.filter((s) => !attendedIds.has(s.id));
 
-      const faltaConcept = await this.prisma.paymentConcept.findFirst({
+      // 1. Ensure MULTA_ASAMBLEA concept exists dynamically
+      let faltaConcept = await this.prisma.paymentConcept.findUnique({
         where: { code: 'MULTA_ASAMBLEA' },
       });
+
+      if (!faltaConcept) {
+        faltaConcept = await this.prisma.paymentConcept.create({
+          data: {
+            code: 'MULTA_ASAMBLEA',
+            name: 'Multa por Inasistencia a Asamblea',
+            periodicity: 'POR_USO' as any,
+            description: 'Sanción económica por inasistencia no justificada a asamblea general',
+          },
+        });
+      }
 
       if (faltaConcept && absentSocios.length > 0) {
         const period = `FALTA-${meeting.id.slice(0, 8)}`;

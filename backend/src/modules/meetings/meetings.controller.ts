@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { MeetingsService } from './meetings.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -31,6 +31,12 @@ export class MeetingsController {
     return this.meetingsService.getQuorum(id);
   }
 
+  @Get(':id/fines')
+  @ApiOperation({ summary: 'Listar multas generadas para la asamblea' })
+  getFines(@Param('id') id: string) {
+    return this.meetingsService.getFines(id);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Crear nueva asamblea o reunión general' })
   create(
@@ -38,6 +44,15 @@ export class MeetingsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.meetingsService.create(dto, userId);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Editar datos de la asamblea' })
+  update(
+    @Param('id') id: string,
+    @Body() dto: { title?: string; date?: string; time?: string; location?: string; description?: string },
+  ) {
+    return this.meetingsService.update(id, dto);
   }
 
   @Patch(':id/status')
@@ -57,5 +72,11 @@ export class MeetingsController {
     @CurrentUser('id') userId: string,
   ) {
     return this.meetingsService.registerAttendance(meetingId, dto, userId);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar una asamblea programada' })
+  delete(@Param('id') id: string) {
+    return this.meetingsService.delete(id);
   }
 }

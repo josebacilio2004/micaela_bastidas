@@ -3,6 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
 import {
   Sparkles,
+  Pencil,
+  Trash2,
+  Coins,
+  AlertCircle,
+  UserCheck,
   Calendar,
   Clock,
   MapPin,
@@ -14,6 +19,7 @@ import {
   ArrowRight,
   Printer,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 
 export default function FaenasPage() {
@@ -33,6 +39,37 @@ export default function FaenasPage() {
   });
 
   // Escáner de asistencia
+    // Fines state
+  const [finesList, setFinesList] = useState<any[]>([]);
+  const [loadingFines, setLoadingFines] = useState(false);
+  const [activeTab, setActiveTab] = useState<'ASISTENTES' | 'MULTAS'>('ASISTENTES');
+
+  // Edit Faena Modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editFaenaForm, setEditFaenaForm] = useState({
+    id: '',
+    title: '',
+    date: '',
+    time: '06:00',
+    sectorToClean: '',
+    fineAmount: 30.00,
+    description: '',
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const fetchFines = async (id: string) => {
+    if (!id) return;
+    setLoadingFines(true);
+    try {
+      const res = await apiRequest(`/faenas/${id}/fines`);
+      setFinesList(res || []);
+    } catch (e) {
+      console.error('Error fetching faena fines:', e);
+    } finally {
+      setLoadingFines(false);
+    }
+  };
+
   const [dniOrCode, setDniOrCode] = useState('');
   const [scanMessage, setScanMessage] = useState<any>(null);
 
@@ -55,6 +92,7 @@ export default function FaenasPage() {
     try {
       const res = await apiRequest(`/faenas/${id}`);
       setSelectedFaena(res);
+      fetchFines(id);
     } catch (e) {
       console.error(e);
     }
@@ -63,6 +101,51 @@ export default function FaenasPage() {
   useEffect(() => {
     fetchFaenas();
   }, []);
+
+    const handleOpenEdit = (f: any) => {
+    setEditFaenaForm({
+      id: f.id,
+      title: f.title,
+      date: f.date ? new Date(f.date).toISOString().substring(0, 10) : '',
+      time: f.time || '06:00',
+      sectorToClean: f.sectorToClean || '',
+      fineAmount: Number(f.fineAmount) || 30.00,
+      description: f.description || '',
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateFaena = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editFaenaForm.title.trim() || !editFaenaForm.id) return;
+    setIsUpdating(true);
+    try {
+      await apiRequest(`/faenas/${editFaenaForm.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(editFaenaForm),
+      });
+      alert('✓ Faena de limpieza actualizada con éxito');
+      setIsEditModalOpen(false);
+      await fetchFaenas();
+      await fetchFaenaDetails(editFaenaForm.id);
+    } catch (e: any) {
+      alert(e.message || 'Error al actualizar faena');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteFaena = async (id: string) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta faena programada? Esta acción es irreversible.')) return;
+    try {
+      await apiRequest(`/faenas/${id}`, { method: 'DELETE' });
+      alert('✓ Faena eliminada con éxito');
+      setSelectedFaena(null);
+      await fetchFaenas();
+    } catch (e: any) {
+      alert(e.message || 'Error al eliminar faena');
+    }
+  };
 
   const handleCreateFaena = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +176,9 @@ export default function FaenasPage() {
         text: `✓ Asistencia confirmada: ${res.merchant.lastName}, ${res.merchant.firstName}`,
       });
       setDniOrCode('');
-      fetchFaenaDetails(selectedFaena.id);
+      await fetchFaenaDetails(selectedFaena.id);
+      await fetchFines(selectedFaena.id);
+      setActiveTab('MULTAS');
     } catch (e: any) {
       setScanMessage({
         type: 'error',
@@ -218,15 +303,33 @@ export default function FaenasPage() {
                   <p className="text-xs text-slate-500 mt-0.5">{selectedFaena.description || 'Jornada comunal obligatoria para socios.'}</p>
                 </div>
 
-                {selectedFaena.status !== 'FINALIZADA' && (
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={handleFinalizeFaena}
-                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow transition flex items-center space-x-1.5"
+                    onClick={() => handleOpenEdit(selectedFaena)}
+                    className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-slate-100 rounded-xl transition border border-slate-200"
+                    title="Editar faena"
                   >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Finalizar Faena y Multar</span>
+                    <Pencil className="w-4 h-4" />
                   </button>
-                )}
+                  {selectedFaena.status !== 'FINALIZADA' && (
+                    <button
+                      onClick={() => handleDeleteFaena(selectedFaena.id)}
+                      className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition border border-rose-200"
+                      title="Eliminar faena programada"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  {selectedFaena.status !== 'FINALIZADA' && (
+                    <button
+                      onClick={handleFinalizeFaena}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow transition flex items-center space-x-1.5"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Finalizar Faena y Multar</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Attendance Scanner Bar */}
@@ -411,6 +514,113 @@ export default function FaenasPage() {
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow"
                 >
                   Programar Faena
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Faena */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-black text-slate-900 uppercase flex items-center space-x-2">
+                <Pencil className="w-5 h-5 text-emerald-600" />
+                <span>Editar Faena de Limpieza</span>
+              </h3>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateFaena} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Título de la Jornada *</label>
+                <input
+                  type="text"
+                  required
+                  value={editFaenaForm.title}
+                  onChange={(e) => setEditFaenaForm({ ...editFaenaForm, title: e.target.value })}
+                  className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Fecha *</label>
+                  <input
+                    type="date"
+                    required
+                    value={editFaenaForm.date}
+                    onChange={(e) => setEditFaenaForm({ ...editFaenaForm, date: e.target.value })}
+                    className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Hora Inicio *</label>
+                  <input
+                    type="time"
+                    required
+                    value={editFaenaForm.time}
+                    onChange={(e) => setEditFaenaForm({ ...editFaenaForm, time: e.target.value })}
+                    className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sector a Limpiar *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFaenaForm.sectorToClean}
+                    onChange={(e) => setEditFaenaForm({ ...editFaenaForm, sectorToClean: e.target.value })}
+                    className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Monto Multa (S/) *</label>
+                  <input
+                    type="number"
+                    step="0.50"
+                    required
+                    value={editFaenaForm.fineAmount}
+                    onChange={(e) => setEditFaenaForm({ ...editFaenaForm, fineAmount: parseFloat(e.target.value) || 0 })}
+                    className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-bold text-rose-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Instrucciones / Materiales</label>
+                <textarea
+                  rows={2}
+                  value={editFaenaForm.description}
+                  onChange={(e) => setEditFaenaForm({ ...editFaenaForm, description: e.target.value })}
+                  className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500 font-medium"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition"
+                >
+                  {isUpdating ? 'Guardando...' : 'Guardar Cambios'}
                 </button>
               </div>
             </form>

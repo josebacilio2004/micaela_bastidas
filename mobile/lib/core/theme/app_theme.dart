@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static const Color primary = Color(0xFF059669); // Emerald 600
-  static const Color primaryDark = Color(0xFF065F46); // Emerald 800
-  static const Color secondary = Color(0xFF0F172A); // Petroleum / Slate 900
+  static const Color primary = Color(0xFF047857); // Deep Emerald (Stitch)
+  static const Color primaryDark = Color(0xFF005D42);
+  static const Color primaryContainer = Color(0xFFD1FAE5);
+  static const Color secondary = Color(0xFF0F766E); // Dark Teal (Stitch)
+  static const Color secondaryContainer = Color(0xFFCCFBF1);
+  static const Color tertiary = Color(0xFF1E3A8A); // Petrol Deep Blue
   static const Color surface = Colors.white;
-  static const Color background = Color(0xFFF8FAFC); // Slate 50
+  static const Color surfaceContainerLow = Color(0xFFEFF4FF);
+  static const Color surfaceContainer = Color(0xFFE5EEFF);
+  static const Color background = Color(0xFFF8FAFC); // Slate Tint
+  static const Color outline = Color(0xFFE2E8F0);
   static const Color accentAmber = Color(0xFFD97706);
   static const Color errorRed = Color(0xFFDC2626);
 

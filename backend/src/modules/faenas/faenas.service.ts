@@ -189,4 +189,76 @@ export class FaenasService {
       montoMulta: fineAmount,
     };
   }
+
+  async update(
+    id: string,
+    data: {
+      title?: string;
+      date?: string;
+      time?: string;
+      sectorToClean?: string;
+      description?: string;
+      fineAmount?: number;
+    },
+  ) {
+    const faena = await this.prisma.faena.findUnique({ where: { id } });
+    if (!faena) throw new NotFoundException('Faena no encontrada');
+
+    const updateData: any = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.date !== undefined) updateData.date = new Date(data.date);
+    if (data.time !== undefined) updateData.time = data.time;
+    if (data.sectorToClean !== undefined) updateData.sectorToClean = data.sectorToClean;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.fineAmount !== undefined) updateData.fineAmount = Number(data.fineAmount);
+
+    return this.prisma.faena.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
+  async delete(id: string) {
+    const faena = await this.prisma.faena.findUnique({
+      where: { id },
+      include: { attendances: true },
+    });
+    if (!faena) throw new NotFoundException('Faena no encontrada');
+
+    if (faena.status === MeetingStatus.FINALIZADA) {
+      throw new BadRequestException('No se puede eliminar una faena que ya ha sido finalizada y cuyas multas contables ya fueron procesadas.');
+    }
+
+    return this.prisma.faena.delete({
+      where: { id },
+    });
+  }
+
+  async getFines(id: string) {
+    const faena = await this.prisma.faena.findUnique({ where: { id } });
+    if (!faena) throw new NotFoundException('Faena no encontrada');
+
+    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const fines = await this.prisma.paymentObligation.findMany({
+      where: {
+        period,
+        concept: { code: 'MULTA_FAENA' },
+      },
+      include: {
+        merchant: {
+          include: {
+            stall: true,
+            sector: true,
+          },
+        },
+        payment: true,
+      },
+      orderBy: [
+        { merchant: { lastName: 'asc' } },
+        { merchant: { firstName: 'asc' } },
+      ],
+    });
+
+    return fines;
+  }
 }

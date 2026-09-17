@@ -1519,6 +1519,7 @@ async function main() {
     { code: 'MICCIONARIO', name: 'Uso de Miccionario', periodicity: Periodicity.POR_USO, description: 'Uso de urinario en servicios higiénicos' },
     { code: 'RETRETE', name: 'Uso de Retrete', periodicity: Periodicity.POR_USO, description: 'Uso de inodoro/retrete en servicios higiénicos' },
     { code: 'MULTA_FAENA', name: 'Multa por Inasistencia a Faena', periodicity: Periodicity.POR_USO, description: 'Sanción económica por no participar en la faena de limpieza' },
+    { code: 'MULTA_ASAMBLEA', name: 'Multa por Inasistencia a Asamblea', periodicity: Periodicity.POR_USO, description: 'Sanción económica por inasistencia no justificada a asamblea general' },
     { code: 'PUBLICIDAD_PERIFONEO', name: 'Publicidad por Perifoneo', periodicity: Periodicity.DIARIO, description: 'Emisión de spots de audio en altavoces del mercado' },
     { code: 'PUBLICIDAD_BANNER', name: 'Publicidad Banners y Carteles', periodicity: Periodicity.MENSUAL, description: 'Exhibición publicitaria en pasajes y muros del mercado' },
     { code: 'FONDO_ROTATORIO_COBRANZA', name: 'Recuperación Fondo Rotatorio', periodicity: Periodicity.POR_USO, description: 'Cobranza y amortización de préstamos a comerciantes' },
@@ -1543,6 +1544,8 @@ async function main() {
     { concept: 'AGUA_INQUILINO', type: MerchantTypeEnum.INQUILINO, amount: 10.00 },
     { concept: 'MICCIONARIO', type: null, amount: 0.50 },
     { concept: 'RETRETE', type: null, amount: 1.00 },
+    { concept: 'MULTA_ASAMBLEA', type: MerchantTypeEnum.SOCIO, amount: 50.00 },
+    { concept: 'MULTA_FAENA', type: MerchantTypeEnum.SOCIO, amount: 30.00 },
   ];
   for (const r of ratesData) {
     const conceptId = createdConcepts[r.concept].id;
