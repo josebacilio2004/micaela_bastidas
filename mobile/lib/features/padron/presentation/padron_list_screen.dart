@@ -129,6 +129,8 @@ class _PadronListScreenState extends State<PadronListScreen> {
                   const SizedBox(width: 8),
                   _filterPill('SOCIO', '🏛️ Socios (Mensual)'),
                   const SizedBox(width: 8),
+                  _filterPill('INQUILINO', '🏢 Inquilinos'),
+                  const SizedBox(width: 8),
                   _filterPill('AMBULANTE_FIJO', '🛒 Amb. Fijos (Diario)'),
                   const SizedBox(width: 8),
                   _filterPill('AMBULANTE_TEMPORAL', '🎪 Temporales (Diario)'),
@@ -214,7 +216,7 @@ class _PadronListScreenState extends State<PadronListScreen> {
                                               width: 40,
                                               height: 40,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => CircleAvatar(
+                                              errorBuilder: (ctx, err, stack) => CircleAvatar(
                                                 radius: 20,
                                                 backgroundColor: AppTheme.primary.withValues(alpha: 0.12),
                                                 child: Text(
@@ -262,22 +264,30 @@ class _PadronListScreenState extends State<PadronListScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: typeName.contains('Socio')
-                                            ? Colors.green.shade50
-                                            : Colors.amber.shade50,
+                                        color: typeName.contains('Inquilino')
+                                            ? Colors.blue.shade50
+                                            : typeName.contains('Socio')
+                                                ? Colors.green.shade50
+                                                : Colors.amber.shade50,
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(
-                                          color: typeName.contains('Socio')
-                                              ? Colors.green.shade200
-                                              : Colors.amber.shade200,
+                                          color: typeName.contains('Inquilino')
+                                              ? Colors.blue.shade200
+                                              : typeName.contains('Socio')
+                                                  ? Colors.green.shade200
+                                                  : Colors.amber.shade200,
                                         ),
                                       ),
                                       child: Text(
-                                        typeName.contains('Socio') ? 'Mensual' : 'Diario',
+                                        typeName,
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
-                                          color: typeName.contains('Socio') ? Colors.green.shade900 : Colors.amber.shade900,
+                                          color: typeName.contains('Inquilino')
+                                              ? Colors.blue.shade800
+                                              : typeName.contains('Socio')
+                                                  ? Colors.green.shade800
+                                                  : Colors.amber.shade900,
                                         ),
                                       ),
                                     ),

@@ -99,7 +99,7 @@ class CarnetQrDialog extends StatelessWidget {
                                 width: 72,
                                 height: 86,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _fallbackAvatar(initials),
+                                errorBuilder: (ctx, err, stack) => _fallbackAvatar(initials),
                               )
                             : _fallbackAvatar(initials),
                       ),

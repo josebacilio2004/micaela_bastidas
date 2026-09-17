@@ -62,7 +62,9 @@ class _RegistrarPagadorScreenState extends State<RegistrarPagadorScreen> {
     final tempId = const Uuid().v4();
 
     String typeName = 'Socio Titular (Mensual)';
-    if (_selectedTypeCode == 'AMBULANTE_FIJO') {
+    if (_selectedTypeCode == 'INQUILINO') {
+      typeName = 'Inquilino (Alquiler + Agua)';
+    } else if (_selectedTypeCode == 'AMBULANTE_FIJO') {
       typeName = 'Ambulante Fijo (Diario)';
     } else if (_selectedTypeCode == 'AMBULANTE_TEMPORAL') {
       typeName = 'Ambulante Temporal (Diario)';
@@ -170,14 +172,19 @@ class _RegistrarPagadorScreenState extends State<RegistrarPagadorScreen> {
                 style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54, letterSpacing: 0.8),
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  _typeOption('SOCIO', '🏛️ Socio', 'Mensual'),
-                  const SizedBox(width: 8),
-                  _typeOption('AMBULANTE_FIJO', '🛒 Amb. Fijo', 'Diario'),
-                  const SizedBox(width: 8),
-                  _typeOption('AMBULANTE_TEMPORAL', '🎪 Temporal', 'Diario'),
-                ],
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _typeOption('SOCIO', '🏛️ Socio', 'Mensual'),
+                    const SizedBox(width: 8),
+                    _typeOption('INQUILINO', '🏢 Inquilino', 'Alquiler'),
+                    const SizedBox(width: 8),
+                    _typeOption('AMBULANTE_FIJO', '🛒 Amb. Fijo', 'Diario'),
+                    const SizedBox(width: 8),
+                    _typeOption('AMBULANTE_TEMPORAL', '🎪 Temporal', 'Diario'),
+                  ],
+                ),
               ),
               const SizedBox(height: 18),
 

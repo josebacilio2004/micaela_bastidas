@@ -273,6 +273,9 @@ class LocalDatabase {
       if (typeFilter == 'SOCIO') {
         whereClause += ' AND (type_name LIKE ? OR type_name LIKE ?)';
         whereArgs.addAll(['%Socio%', '%Titular%']);
+      } else if (typeFilter == 'INQUILINO') {
+        whereClause += ' AND (type_name LIKE ?)';
+        whereArgs.add('%Inquilino%');
       } else if (typeFilter == 'AMBULANTE_FIJO') {
         whereClause += ' AND (type_name LIKE ?)';
         whereArgs.add('%Fijo%');
