@@ -125,4 +125,76 @@ export class RevolvingFundService {
 
     return collection;
   }
+
+  /**
+   * Generar contrato legal y cronograma oficial de amortización
+   */
+  async getLoanContract(id: string) {
+    const loan = await this.findLoanById(id);
+
+    const principal = Number(loan.amount);
+    const months = Number(loan.termMonths) || 1;
+    const rate = Number(loan.interestRate || 0);
+    const totalInterest = (principal * rate * months) / 100;
+    const totalToPay = principal + totalInterest;
+
+    const monthlyPrincipal = Number((principal / months).toFixed(2));
+    const monthlyInterest = Number((totalInterest / months).toFixed(2));
+    const monthlyTotal = Number((totalToPay / months).toFixed(2));
+
+    const startDate = new Date(loan.date);
+    const schedule = [];
+    let remainingBalance = totalToPay;
+
+    for (let i = 1; i <= months; i++) {
+      const dueDate = new Date(startDate);
+      dueDate.setMonth(startDate.getMonth() + i);
+
+      remainingBalance = Math.max(0, Number((remainingBalance - monthlyTotal).toFixed(2)));
+
+      // Verificar si ya fue amortizada alguna cobranza
+      const isPaid = (loan.collections && loan.collections.length >= i) || loan.status === 'CANCELADO';
+
+      schedule.push({
+        installmentNumber: i,
+        dueDate: dueDate.toISOString().split('T')[0],
+        principalAmount: monthlyPrincipal.toFixed(2),
+        interestAmount: monthlyInterest.toFixed(2),
+        totalInstallment: monthlyTotal.toFixed(2),
+        remainingBalance: remainingBalance.toFixed(2),
+        status: isPaid ? 'PAGADO' : 'PENDIENTE',
+      });
+    }
+
+    return {
+      title: 'CONTRATO DE MUTUO DINERARIO - FONDO ROTATORIO DE SOLIDARIDAD COMERCIAL',
+      orderNumber: loan.orderNumber,
+      association: 'ASOCIACIÓN DE COMERCIANTES DEL MERCADO DE ABASTOS MICAELA BASTIDAS',
+      ruc: '20486000001',
+      date: new Date(loan.date).toISOString().split('T')[0],
+      borrower: {
+        name: loan.borrowerName,
+        dni: loan.borrowerDni,
+        internalCode: loan.merchant?.internalCode || 'NO_SOCIO',
+        stallCode: (loan.merchant as any)?.stall?.code || 'N/A',
+      },
+      loanDetails: {
+        principalAmount: principal.toFixed(2),
+        interestRateMonthly: rate.toFixed(2),
+        termMonths: months,
+        totalInterest: totalInterest.toFixed(2),
+        totalAmountToPay: totalToPay.toFixed(2),
+        monthlyQuota: monthlyTotal.toFixed(2),
+        status: loan.status,
+      },
+      schedule,
+      clauses: [
+        'PRIMERA (FONDO ROTATORIO): El Fondo Rotatorio es un fondo común solidario instituido por la Asociación para dinamizar el capital comercial de sus socios e inquilinos.',
+        'SEGUNDA (ENTREGA Y RECEPCIÓN): La ASOCIACIÓN entrega en calidad de préstamo el monto acordado, el cual el PRESTATARIO declara recibir a su entera conformidad.',
+        'TERCERA (PLAZO Y VENCIMIENTO): El préstamo se amortizará puntualmente según las fechas detalladas en el Cronograma Oficial Anexo.',
+        'CUARTA (TASA DE INTERÉS COMPENSATORIO): Se pacta una tasa mensual fija solidaria, destinada a cubrir los costos administrativos y reposición del fondo.',
+        'QUINTA (INCUMPLIMIENTO): En caso de mora superior a dos cuotas, la Tesorería suspenderá nuevos créditos y someterá el cobro a la Asamblea General.',
+      ],
+    };
+  }
 }

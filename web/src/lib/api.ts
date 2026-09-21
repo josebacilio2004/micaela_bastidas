@@ -138,3 +138,8 @@ export function getCsvDownloadUrl(startDate?: string, endDate?: string) {
   if (endDate) params.append('endDate', endDate);
   return `${BASE_URL}/exports/csv?${params.toString()}`;
 }
+
+export function getAuthToken(): string | null {
+  return typeof window !== 'undefined' ? localStorage.getItem('micaela_token') : null;
+}
+

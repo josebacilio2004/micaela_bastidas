@@ -1572,6 +1572,89 @@ async function main() {
   }
   console.log('✓ Conceptos de cobro y tarifas configuradas');
 
+  // 8.1 Categorías Oficiales de Gestión Documental
+  const docCategories = [
+    { code: 'CARTA_RECIBIDA', name: 'Cartas Recibidas', direction: 'RECIBIDO', description: 'Comunicaciones y cartas ingresadas por socios, vecinos o entidades' },
+    { code: 'CARTA_ENVIADA', name: 'Cartas Enviadas', direction: 'ENVIADO', description: 'Cartas oficiales emitidas por la Junta Directiva' },
+    { code: 'SOLICITUD', name: 'Solicitudes', direction: 'RECIBIDO', description: 'Peticiones formales de socios, comerciantes o terceros' },
+    { code: 'OFICIO', name: 'Oficios y Comunicaciones', direction: 'ENVIADO', description: 'Oficios dirigidos a la Municipalidad, Policía, Bomberos, etc.' },
+    { code: 'MEMORANDUM', name: 'Memorándum', direction: 'INTERNO', description: 'Comunicaciones internas de cumplimiento obligatorio' },
+    { code: 'CONTRATO', name: 'Contratos y Convenios', direction: 'INTERNO', description: 'Contratos de alquiler de puestos, servicios y acuerdos' },
+    { code: 'CONSTANCIA', name: 'Constancias y Certificados', direction: 'ENVIADO', description: 'Constancias de socio, no adeudo, trabajo y posesión' },
+    { code: 'RESOLUCION', name: 'Resoluciones Directivas', direction: 'INTERNO', description: 'Acuerdos formales tomados en sesiones de Consejo Directivo' },
+    { code: 'INFORME', name: 'Informes de Gestión y Balances', direction: 'INTERNO', description: 'Informes contables, financieros y comisiones' },
+    { code: 'OTROS', name: 'Otros Documentos Oficiales', direction: 'INTERNO', description: 'Archivos generales del archivo institucional' },
+  ];
+  for (const dc of docCategories) {
+    await prisma.documentCategory.upsert({
+      where: { code: dc.code },
+      update: {},
+      create: dc,
+    });
+  }
+  console.log('✓ Categorías de Gestión Documental configuradas');
+
+  // 8.2 Conceptos de Gestión Documental
+  const docConcepts = [
+    { code: 'ASAMBLEA', name: 'Asambleas Generales', description: 'Convocatorias, padrones y actas de asambleas ordinarias y extraordinarias' },
+    { code: 'FAENA', name: 'Faenas de Limpieza', description: 'Campañas comunales de limpieza, fumigación y desinfección' },
+    { code: 'LEGAL', name: 'Asuntos Legales y Notariales', description: 'Trámites en Registros Públicos (SUNARP), notarías y juzgados' },
+    { code: 'MUNICIPAL', name: 'Gestión Municipal', description: 'Licencias de funcionamiento, defensa civil (ITSE) y arbitrios' },
+    { code: 'SUNAT', name: 'Tributación SUNAT', description: 'Declaraciones, RUC, libros contables y tributos' },
+    { code: 'SERVICIOS_PUBLICOS', name: 'Servicios Básicos (Agua y Luz)', description: 'Gestiones ante Sedam Huancayo y Electrocentro' },
+    { code: 'INFRAESTRUCTURA', name: 'Obras y Mantenimiento', description: 'Proyectos de techado, pisos, electrificación y seguridad' },
+    { code: 'PADRON_SOCIOS', name: 'Padrón y Membresía', description: 'Expedientes de admisión, transferencias y bajas de socios' },
+  ];
+  for (const c of docConcepts) {
+    await prisma.documentConcept.upsert({
+      where: { code: c.code },
+      update: {},
+      create: c,
+    });
+  }
+  console.log('✓ Conceptos de Gestión Documental configurados');
+
+  // 8.3 Guiones Publicitarios Pre-escritos
+  const defaultScripts = [
+    {
+      title: 'Citación a Asamblea General Ordinaria',
+      category: 'ASAMBLEA',
+      estimatedDurationSeconds: 35,
+      content: '¡Atención comerciantes y socios del Mercado Micaela Bastidas! Por encargo de la Junta Directiva, se cita a todos los socios a la próxima ASAMBLEA GENERAL ORDINARIA a realizarse el día [FECHA] a horas [HORA] en el patio central del mercado. Agenda: Balance económico y proyectos de techado. Se recuerda que la asistencia es obligatoria y se aplicará la multa de ley a los inasistentes. ¡Puntualidad es respeto!',
+    },
+    {
+      title: 'Convocatoria a Faena Comunal de Limpieza',
+      category: 'FAENA',
+      estimatedDurationSeconds: 30,
+      content: '¡Aviso importante de salubridad! Se comunica a todos los comerciantes de los sectores Carnes, Frutas, Abarrotes y Comidas que este [DÍA] desde las [HORA] realizaremos la GRAN FAENA DE LIMPIEZA Y DESINFECCIÓN GENERAL de nuestros pasajes. Traer escobillones, detergente y baldes de agua. Evitemos multas y mantengamos limpio nuestro mercado.',
+    },
+    {
+      title: 'Comunicado de Pago de Cuotas Mensuales',
+      category: 'AVISO_COBRANZA',
+      estimatedDurationSeconds: 25,
+      content: 'Estimados socios e inquilinos, la Tesorería del mercado les recuerda que ya se encuentran al cobro las cuotas del mes correspondiente a Alcabala de puesto y Servicio de Agua. Acérquense a la oficina de administración de 8:00 AM a 2:00 PM para evitar recargos o corte de servicios.',
+    },
+    {
+      title: 'Promoción Comercial de Puesto de Comidas y Jugos',
+      category: 'PROMOCION_SOCIO',
+      estimatedDurationSeconds: 25,
+      content: '¡Para todos nuestros caseros y caseras! Visiten el pabellón de Comidas del Mercado Micaela Bastidas. Hoy exquisitos menús criollos, caldos de gallina y jugos naturales preparados al instante con total higiene y al mejor precio de la ciudad. ¡Los esperamos!',
+    },
+    {
+      title: 'Aviso de Seguridad y Cuidado de Pertenencias',
+      category: 'COMUNICADO_GENERAL',
+      estimatedDurationSeconds: 25,
+      content: 'A todo el público consumidor y comerciantes: Por su seguridad, mantengan a la vista sus bolsos, billeteras y celulares en las zonas de mayor tránsito. Nuestro mercado cuenta con sistema de videovigilancia CCTV en todos los pabellones. ¡Juntos cuidamos nuestro mercado!',
+    },
+  ];
+  for (const s of defaultScripts) {
+    const existingScript = await prisma.advertisingScript.findFirst({ where: { title: s.title } });
+    if (!existingScript) {
+      await prisma.advertisingScript.create({ data: s });
+    }
+  }
+  console.log('✓ Guiones publicitarios pre-escritos configurados');
+
   // 9. CARGA DE LOS 107 SOCIOS OFICIALES DEL MERCADO MICAELA BASTIDAS
   console.log('--> Insertando 107 socios oficiales ordenados alfabéticamente...');
   const createdMerchants: Record<string, any> = {};

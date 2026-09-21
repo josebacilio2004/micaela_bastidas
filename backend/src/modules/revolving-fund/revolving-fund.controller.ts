@@ -22,6 +22,12 @@ export class RevolvingFundController {
     return this.rfService.findLoanById(id);
   }
 
+  @Get('loans/:id/contract')
+  @ApiOperation({ summary: 'Obtener contrato oficial con cronograma de amortización' })
+  async getLoanContract(@Param('id') id: string) {
+    return this.rfService.getLoanContract(id);
+  }
+
   @Post('loans')
   @ApiOperation({ summary: 'Registrar nuevo préstamo (colocación)' })
   async createLoan(@Body() body: any, @CurrentUser() user: any) {

@@ -25,6 +25,8 @@ import { DocumentsModule } from './modules/documents/documents.module';
 import { FaenasModule } from './modules/faenas/faenas.module';
 import { AdvertisingModule } from './modules/advertising/advertising.module';
 import { RevolvingFundModule } from './modules/revolving-fund/revolving-fund.module';
+import { RentalsModule } from './modules/rentals/rentals.module';
+import { CashflowModule } from './modules/cashflow/cashflow.module';
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { RevolvingFundModule } from './modules/revolving-fund/revolving-fund.mod
     FaenasModule,
     AdvertisingModule,
     RevolvingFundModule,
+    RentalsModule,
+    CashflowModule,
   ],
 })
 export class AppModule {}

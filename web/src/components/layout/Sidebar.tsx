@@ -23,6 +23,8 @@ import {
   HandCoins,
   UserCog,
   Video,
+  Building,
+  ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -56,7 +58,9 @@ const navigationSections: NavSection[] = [
       { name: 'Cobranza Alcabala', href: '/alcabala', icon: Coins },
       { name: 'Cobranza de Agua', href: '/agua', icon: Droplets },
       { name: 'Servicios Higiénicos', href: '/servicios-higienicos', icon: Bath },
+      { name: 'Alquileres de Puestos', href: '/alquileres', icon: Building },
       { name: 'Fondo Rotatorio', href: '/fondo-rotatorio', icon: HandCoins },
+      { name: 'Ingresos y Egresos', href: '/flujo-caja', icon: ArrowLeftRight },
       { name: 'Historial de Pagos', href: '/pagos', icon: Receipt },
       { name: 'Tarifas Vigentes', href: '/tarifas', icon: Sliders },
     ],
