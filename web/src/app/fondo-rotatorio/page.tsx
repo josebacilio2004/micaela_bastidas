@@ -127,6 +127,233 @@ export default function FondoRotatorioPage() {
     }
   };
 
+  const handlePrintLoanContract = () => {
+    if (!contractData) return;
+    const printWindow = window.open('', '_blank', 'width=850,height=1100');
+    if (!printWindow) {
+      alert('Por favor permita las ventanas emergentes en su navegador para imprimir');
+      return;
+    }
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Contrato Fondo Rotatorio - ${contractData.orderNumber}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm 18mm;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              color: #111;
+              line-height: 1.5;
+              font-size: 10.5pt;
+              margin: 0;
+              padding: 0;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 10px;
+              margin-bottom: 14px;
+            }
+            .header h2 {
+              font-size: 13pt;
+              font-weight: 900;
+              margin: 0 0 3px 0;
+              text-transform: uppercase;
+            }
+            .header p {
+              font-size: 8.5pt;
+              color: #444;
+              margin: 2px 0;
+            }
+            .header h1 {
+              font-size: 13.5pt;
+              font-weight: 900;
+              color: #312e81;
+              margin: 8px 0 2px 0;
+              text-transform: uppercase;
+            }
+            .header .contract-no {
+              font-family: monospace;
+              font-weight: bold;
+              font-size: 10pt;
+              color: #333;
+            }
+            .grid-parties {
+              display: flex;
+              justify-content: space-between;
+              background-color: #f8fafc;
+              border: 1px solid #cbd5e1;
+              padding: 10px 14px;
+              margin-bottom: 14px;
+              font-size: 9.5pt;
+            }
+            .party-col {
+              width: 48%;
+            }
+            .party-col .label {
+              font-size: 8pt;
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #64748b;
+              margin-bottom: 4px;
+            }
+            .clauses {
+              margin-bottom: 14px;
+            }
+            .clause {
+              font-size: 9.5pt;
+              text-align: justify;
+              margin-bottom: 6px;
+              line-height: 1.4;
+            }
+            .schedule-title {
+              font-size: 10pt;
+              font-weight: 900;
+              text-transform: uppercase;
+              margin-top: 14px;
+              margin-bottom: 6px;
+              border-bottom: 1px solid #333;
+              padding-bottom: 3px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 16px;
+              font-size: 9pt;
+            }
+            th, td {
+              border: 1px solid #ccc;
+              padding: 5px 7px;
+              text-align: left;
+            }
+            th {
+              background-color: #f3f4f6;
+              font-weight: bold;
+              text-transform: uppercase;
+              font-size: 8pt;
+            }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+            .signatures {
+              margin-top: 40px;
+              display: flex;
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .sig-box {
+              width: 30%;
+              text-align: center;
+              border-top: 1px solid #444;
+              padding-top: 5px;
+              font-size: 8.5pt;
+            }
+            .sig-box p {
+              margin: 2px 0;
+            }
+            .sig-box .name {
+              font-weight: bold;
+            }
+            .sig-box .role {
+              font-size: 7.5pt;
+              color: #555;
+              text-transform: uppercase;
+              font-weight: bold;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>${contractData.association || 'ASOCIACIÓN DE COMERCIANTES DEL MERCADO MICAELA BASTIDAS'}</h2>
+            <p>RUC: ${contractData.ruc || '20486253109'} | FONDO ROTATORIO SOLIDARIO</p>
+            <h1>${contractData.title || 'CONTRATO DE MUTUO CON INTERÉS'}</h1>
+            <p class="contract-no">N° OPERACIÓN: ${contractData.orderNumber} • FECHA: ${contractData.date}</p>
+          </div>
+
+          <div class="grid-parties">
+            <div class="party-col">
+              <div class="label">Prestatario (Comerciante):</div>
+              <p><b>${contractData.borrower?.name}</b></p>
+              <p>DNI: ${contractData.borrower?.dni}</p>
+              <p>Puesto: <b>${contractData.borrower?.stallCode}</b></p>
+            </div>
+            <div class="party-col">
+              <div class="label">Condiciones del Crédito:</div>
+              <p>Monto Otorgado: <b>S/ ${Number(contractData.loanDetails?.principalAmount || 0).toFixed(2)}</b></p>
+              <p>Tasa Interés Mensual: <b>${contractData.loanDetails?.interestRateMonthly}%</b></p>
+              <p>Plazo Total: <b>${contractData.loanDetails?.termMonths} meses</b></p>
+              <p>Total a Cancelar: <b>S/ ${Number(contractData.loanDetails?.totalAmountToPay || 0).toFixed(2)}</b></p>
+            </div>
+          </div>
+
+          <div class="clauses">
+            <div class="schedule-title">CLÁUSULAS CONTRACTUALES</div>
+            ${(contractData.clauses || []).map((clause: string) => `
+              <div class="clause">${clause}</div>
+            `).join('')}
+          </div>
+
+          <div class="schedule-title">CRONOGRAMA OFICIAL DE AMORTIZACIÓN DE CUOTAS</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="text-center">Cuota</th>
+                <th>Vencimiento</th>
+                <th class="text-right">Capital</th>
+                <th class="text-right">Interés</th>
+                <th class="text-right">Cuota Total</th>
+                <th class="text-right">Saldo Deudor</th>
+                <th class="text-center">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(contractData.schedule || []).map((row: any) => `
+                <tr>
+                  <td class="text-center"><b>Cuota ${row.installmentNumber}</b></td>
+                  <td>${row.dueDate}</td>
+                  <td class="text-right">S/ ${Number(row.principalAmount).toFixed(2)}</td>
+                  <td class="text-right">S/ ${Number(row.interestAmount).toFixed(2)}</td>
+                  <td class="text-right"><b>S/ ${Number(row.totalInstallment).toFixed(2)}</b></td>
+                  <td class="text-right">S/ ${Number(row.remainingBalance).toFixed(2)}</td>
+                  <td class="text-center">${row.status}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div class="sig-box">
+              <p class="name">${contractData.borrower?.name}</p>
+              <p>DNI: ${contractData.borrower?.dni}</p>
+              <p class="role">Prestatario</p>
+            </div>
+            <div class="sig-box">
+              <p class="name">PRESIDENCIA</p>
+              <p>M. Micaela Bastidas</p>
+              <p class="role">Representante Legal</p>
+            </div>
+            <div class="sig-box">
+              <p class="name">TESORERÍA GENERAL</p>
+              <p>M. Micaela Bastidas</p>
+              <p class="role">Conformidad</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
   const handleSelectLoanForCollection = (loanId: string, quotaNumber?: number) => {
     const l = loans.find((item) => item.id === loanId);
     if (!l) {
@@ -674,33 +901,8 @@ export default function FondoRotatorioPage() {
 
       {/* Modal Contrato y Cronograma de Amortización */}
       {contractData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:z-auto print:block">
-          <style dangerouslySetInnerHTML={{ __html: `
-            @media print {
-              body * {
-                visibility: hidden !important;
-              }
-              #printable-fund-contract, #printable-fund-contract * {
-                visibility: visible !important;
-              }
-              #printable-fund-contract {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 10mm 15mm !important;
-                background: white !important;
-                border: none !important;
-                box-shadow: none !important;
-                border-radius: 0 !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-          `}} />
-          <div id="printable-fund-contract" className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-3xl shadow-2xl border border-slate-100 my-8 print:my-0 print:p-0 print:border-none print:shadow-none">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div id="printable-fund-contract" className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-3xl shadow-2xl border border-slate-100 my-8">
             <div className="flex justify-between items-center pb-4 border-b border-slate-200">
               <div className="flex items-center space-x-2">
                 <FileText className="w-5 h-5 text-indigo-600" />
@@ -717,7 +919,7 @@ export default function FondoRotatorioPage() {
             </div>
 
             {/* Printable Document Area */}
-            <div id="printable-contract" className="mt-4 p-6 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-4 font-sans print:p-0 print:border-0 print:bg-white">
+            <div id="printable-contract" className="mt-4 p-6 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-4 font-sans">
               {/* Document Header */}
               <div className="text-center border-b border-slate-300 pb-3">
                 <p className="font-black text-slate-900 text-sm tracking-wide">{contractData.association}</p>
@@ -816,7 +1018,7 @@ export default function FondoRotatorioPage() {
             </div>
 
             {/* Actions */}
-            <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2 no-print print:hidden">
+            <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">
               <button
                 type="button"
                 onClick={() => setContractData(null)}
@@ -826,8 +1028,8 @@ export default function FondoRotatorioPage() {
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow flex items-center space-x-1.5"
+                onClick={handlePrintLoanContract}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow flex items-center space-x-1.5 transition"
               >
                 <Printer className="w-4 h-4" />
                 <span>Imprimir Contrato y Cronograma</span>

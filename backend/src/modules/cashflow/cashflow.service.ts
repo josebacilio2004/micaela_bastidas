@@ -215,21 +215,26 @@ export class CashflowService {
     status?: string;
     search?: string;
   }) {
+    let dateFilter: any = undefined;
+    if (query?.startDate || query?.endDate) {
+      dateFilter = {};
+      if (query.startDate) dateFilter.gte = new Date(query.startDate);
+      if (query.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.lte = end;
+      }
+    }
+
     const where: any = {};
-    if (query?.category && query.category !== 'ALL') {
+    if (query?.category && query.category !== 'ALL' && query.category !== 'PLANILLA_PERSONAL' && query.category !== 'FONDO_ROTATORIO_CREDITO' && query.category !== 'FONDO_ROTATORIO') {
       where.category = query.category;
     }
     if (query?.status && query.status !== 'ALL') {
       where.status = query.status;
     }
-    if (query?.startDate || query?.endDate) {
-      where.date = {};
-      if (query.startDate) where.date.gte = new Date(query.startDate);
-      if (query.endDate) {
-        const end = new Date(query.endDate);
-        end.setHours(23, 59, 59, 999);
-        where.date.lte = end;
-      }
+    if (dateFilter) {
+      where.date = dateFilter;
     }
     if (query?.search) {
       where.OR = [
@@ -240,14 +245,108 @@ export class CashflowService {
       ];
     }
 
-    return this.prisma.marketExpense.findMany({
-      where,
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-        cashRegister: { select: { id: true, name: true } },
-      },
-      orderBy: { date: 'desc' },
-    });
+    // 1. Gastos directos registrados (MarketExpense)
+    let marketExpenses: any[] = [];
+    if (!query?.category || query.category === 'ALL' || (query.category !== 'PLANILLA_PERSONAL' && query.category !== 'FONDO_ROTATORIO_CREDITO' && query.category !== 'FONDO_ROTATORIO')) {
+      marketExpenses = await this.prisma.marketExpense.findMany({
+        where,
+        include: {
+          createdBy: { select: { id: true, fullName: true, username: true } },
+          cashRegister: { select: { id: true, name: true } },
+        },
+        orderBy: { date: 'desc' },
+      });
+    }
+
+    const results: any[] = [...marketExpenses];
+
+    // 2. Planilla de Personal (StaffPayment)
+    if (!query?.category || query.category === 'ALL' || query.category === 'PLANILLA_PERSONAL') {
+      const staffPayments = await this.prisma.staffPayment.findMany({
+        where: {
+          ...(dateFilter ? { paymentDate: dateFilter } : {}),
+        },
+        include: {
+          staffMember: true,
+        },
+        orderBy: { paymentDate: 'desc' },
+      });
+
+      for (const sp of staffPayments) {
+        const beneficiaryName = `${sp.staffMember?.lastName || ''}, ${sp.staffMember?.firstName || ''}`.trim();
+        const searchMatches =
+          !query?.search ||
+          beneficiaryName.toLowerCase().includes(query.search.toLowerCase()) ||
+          (sp.period && sp.period.toLowerCase().includes(query.search.toLowerCase())) ||
+          (sp.receiptNumber && sp.receiptNumber.toLowerCase().includes(query.search.toLowerCase()));
+
+        if (searchMatches) {
+          results.push({
+            id: sp.id,
+            code: sp.receiptNumber || `PLAN-${sp.period}`,
+            category: 'PLANILLA_PERSONAL',
+            concept: `Remuneración Personal: ${sp.staffMember?.role || 'Colaborador'} (Periodo ${sp.period})`,
+            amount: Number(sp.amount),
+            date: sp.paymentDate,
+            beneficiary: beneficiaryName || 'Personal',
+            documentType: 'BOLETA_PAGO',
+            documentNumber: sp.receiptNumber || sp.period,
+            fileUrl: null,
+            paymentMethod: sp.paymentMethod,
+            cashRegisterId: sp.cashMovementId,
+            cashRegister: sp.cashMovementId ? { id: sp.cashMovementId, name: 'Caja Activa' } : null,
+            status: sp.status || 'PAGADO',
+            notes: sp.notes,
+            createdBy: null,
+            source: 'STAFF_PAYMENT',
+          });
+        }
+      }
+    }
+
+    // 3. Desembolsos de Microcréditos (Loan)
+    if (!query?.category || query.category === 'ALL' || query.category === 'FONDO_ROTATORIO_CREDITO' || query.category === 'FONDO_ROTATORIO') {
+      const loans = await this.prisma.loan.findMany({
+        where: {
+          ...(dateFilter ? { date: dateFilter } : {}),
+        },
+        orderBy: { date: 'desc' },
+      });
+
+      for (const l of loans) {
+        const searchMatches =
+          !query?.search ||
+          l.borrowerName.toLowerCase().includes(query.search.toLowerCase()) ||
+          l.borrowerDni.includes(query.search) ||
+          l.orderNumber.toLowerCase().includes(query.search.toLowerCase());
+
+        if (searchMatches) {
+          results.push({
+            id: l.id,
+            code: l.orderNumber,
+            category: 'FONDO_ROTATORIO_CREDITO',
+            concept: `Desembolso Préstamo Solidario (${l.termMonths} meses al ${l.interestRate}%)`,
+            amount: Number(l.amount),
+            date: l.date,
+            beneficiary: `${l.borrowerName} (DNI ${l.borrowerDni})`,
+            documentType: 'CONTRATO_MUTUO',
+            documentNumber: l.orderNumber,
+            fileUrl: null,
+            paymentMethod: 'EFECTIVO',
+            cashRegisterId: null,
+            cashRegister: null,
+            status: l.status === 'VIGENTE' || l.status === 'CANCELADO' ? 'PAGADO' : l.status,
+            notes: l.notes,
+            createdBy: null,
+            source: 'LOAN',
+          });
+        }
+      }
+    }
+
+    // Ordenar de más reciente a más antiguo
+    results.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return results;
   }
 
   async findOneExpense(id: string) {

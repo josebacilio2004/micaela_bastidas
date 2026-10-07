@@ -222,6 +222,202 @@ export default function AlquileresPage() {
     }
   };
 
+  const handlePrintContract = () => {
+    if (!activeDocContract) return;
+    const printWindow = window.open('', '_blank', 'width=850,height=1100');
+    if (!printWindow) {
+      alert('Por favor permita las ventanas emergentes en su navegador para imprimir');
+      return;
+    }
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Contrato de Arrendamiento - ${activeDocContract.contractNumber}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm 18mm;
+            }
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              color: #111;
+              line-height: 1.5;
+              font-size: 10.5pt;
+              margin: 0;
+              padding: 0;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 2px solid #000;
+              padding-bottom: 10px;
+              margin-bottom: 14px;
+            }
+            .header h2 {
+              font-size: 13pt;
+              font-weight: 900;
+              margin: 0 0 3px 0;
+              text-transform: uppercase;
+            }
+            .header p {
+              font-size: 8.5pt;
+              color: #444;
+              margin: 2px 0;
+            }
+            .header h1 {
+              font-size: 13.5pt;
+              font-weight: 900;
+              color: #065f46;
+              margin: 8px 0 2px 0;
+              text-transform: uppercase;
+            }
+            .header .contract-no {
+              font-family: monospace;
+              font-weight: bold;
+              font-size: 10pt;
+              color: #333;
+            }
+            .intro {
+              font-size: 10pt;
+              text-align: justify;
+              margin-bottom: 12px;
+              line-height: 1.45;
+            }
+            .clauses {
+              margin-bottom: 12px;
+            }
+            .clause {
+              font-size: 9.5pt;
+              text-align: justify;
+              margin-bottom: 7px;
+              line-height: 1.4;
+            }
+            .clause b {
+              color: #000;
+            }
+            .schedule-title {
+              font-size: 10pt;
+              font-weight: 900;
+              text-transform: uppercase;
+              margin-top: 14px;
+              margin-bottom: 6px;
+              border-bottom: 1px solid #333;
+              padding-bottom: 3px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 16px;
+              font-size: 9pt;
+            }
+            th, td {
+              border: 1px solid #ccc;
+              padding: 5px 7px;
+              text-align: left;
+            }
+            th {
+              background-color: #f3f4f6;
+              font-weight: bold;
+              text-transform: uppercase;
+              font-size: 8pt;
+            }
+            .signatures {
+              margin-top: 35px;
+              display: flex;
+              justify-content: space-between;
+              page-break-inside: avoid;
+            }
+            .sig-box {
+              width: 45%;
+              text-align: center;
+              border-top: 1px solid #444;
+              padding-top: 5px;
+              font-size: 8.5pt;
+            }
+            .sig-box p {
+              margin: 2px 0;
+            }
+            .sig-box .name {
+              font-weight: bold;
+            }
+            .sig-box .role {
+              font-size: 7.5pt;
+              color: #555;
+              text-transform: uppercase;
+              font-weight: bold;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>${activeDocContract.association || 'ASOCIACIÓN DE COMERCIANTES DEL MERCADO MICAELA BASTIDAS'}</h2>
+            <p>${activeDocContract.address || 'Av. Micaela Bastidas S/N - Huancayo'} • RUC: ${activeDocContract.ruc || '20486253109'}</p>
+            <h1>${activeDocContract.title || 'CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL'}</h1>
+            <p class="contract-no">N° CONTRATO: ${activeDocContract.contractNumber}</p>
+          </div>
+
+          <div class="intro">
+            Conste por el presente documento privado, el <b>CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL</b> que celebran de una parte la <b>${activeDocContract.association}</b>, en adelante <b>EL ARRENDADOR</b>; y de la otra parte don/doña <b>${activeDocContract.tenant?.name}</b>, identificado(a) con <b>DNI N° ${activeDocContract.tenant?.dni}</b>, con giro comercial autorizado de <b>${activeDocContract.tenant?.businessCategory}</b>, en adelante <b>EL ARRENDATARIO</b>.
+          </div>
+
+          <div class="clauses">
+            ${(activeDocContract.clauses || []).map((c: string) => {
+              const parts = c.split(':');
+              return `<div class="clause"><b>${parts[0]}:</b>${parts.slice(1).join(':')}</div>`;
+            }).join('')}
+          </div>
+
+          <div class="schedule-title">ANEXO: CRONOGRAMA OFICIAL DE AMORTIZACIÓN Y PAGOS</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Cuota</th>
+                <th>Vencimiento</th>
+                <th>Canon</th>
+                <th>Interés</th>
+                <th>Total Cuota</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(activeDocContract.schedule || []).map((item: any) => `
+                <tr>
+                  <td><b>Cuota ${item.installmentNumber}</b></td>
+                  <td>${new Date(item.dueDate).toLocaleDateString('es-PE')}</td>
+                  <td>S/ ${Number(item.rentAmount).toFixed(2)}</td>
+                  <td>S/ ${Number(item.interestAmount).toFixed(2)}</td>
+                  <td><b>S/ ${Number(item.totalAmount).toFixed(2)}</b></td>
+                  <td>${item.status}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div class="sig-box">
+              <p class="name">${activeDocContract.tenant?.name}</p>
+              <p>DNI: ${activeDocContract.tenant?.dni}</p>
+              <p class="role">EL ARRENDATARIO (Firma y Huella)</p>
+            </div>
+            <div class="sig-box">
+              <p class="name">CONSEJO DIRECTIVO</p>
+              <p>MERCADO MICAELA BASTIDAS</p>
+              <p class="role">EL ARRENDADOR (Presidente / Tesorera)</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
   // KPIs
   const activeCount = contracts.filter((c) => c.status === 'ACTIVO').length;
   const totalRecaudado = contracts.reduce((acc, c) => acc + (c.progress?.totalPaidAmount || 0), 0);
@@ -782,33 +978,8 @@ export default function AlquileresPage() {
 
       {/* MODAL CONTRATO LEGAL Y CRONOGRAMA IMPRIMIBLE */}
       {isContractDocModalOpen && activeDocContract && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:z-auto print:block">
-          <style dangerouslySetInnerHTML={{ __html: `
-            @media print {
-              body * {
-                visibility: hidden !important;
-              }
-              #printable-rental-contract, #printable-rental-contract * {
-                visibility: visible !important;
-              }
-              #printable-rental-contract {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 10mm 15mm !important;
-                background: white !important;
-                border: none !important;
-                box-shadow: none !important;
-                border-radius: 0 !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-          `}} />
-          <div id="printable-rental-contract" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto space-y-5 font-serif text-slate-900 print:max-h-none print:overflow-visible print:p-0 print:border-none print:shadow-none">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div id="printable-rental-contract" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto space-y-5 font-serif text-slate-900">
             {/* Cabecera Oficial */}
             <div className="text-center border-b-2 border-slate-900 pb-4 font-sans">
               <h2 className="text-base font-black uppercase tracking-wider">{activeDocContract.association}</h2>
@@ -888,16 +1059,17 @@ export default function AlquileresPage() {
             </div>
 
             {/* Botones */}
-            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-200 font-sans no-print print:hidden">
+            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-200 font-sans">
               <button
                 onClick={() => setIsContractDocModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600"
+                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
               >
                 Cerrar
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-5 py-2 bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center space-x-1.5 shadow"
+                type="button"
+                onClick={handlePrintContract}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black flex items-center space-x-1.5 shadow transition"
               >
                 <Printer className="w-4 h-4" />
                 <span>Imprimir Contrato y Cronograma</span>

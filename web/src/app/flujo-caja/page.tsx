@@ -168,7 +168,19 @@ export default function FlujoCajaPage() {
     try {
       await apiRequest('/cashflow/expenses', {
         method: 'POST',
-        body: JSON.stringify(expenseForm),
+        body: JSON.stringify({
+          category: expenseForm.category,
+          concept: expenseForm.concept,
+          beneficiary: expenseForm.beneficiary,
+          amount: Number(expenseForm.amount),
+          date: expenseForm.date,
+          documentType: expenseForm.documentType,
+          documentNumber: expenseForm.documentNumber || undefined,
+          fileUrl: expenseForm.voucherUrl || undefined,
+          paymentMethod: expenseForm.paymentMethod,
+          registerCashExpense: expenseForm.deductFromCashRegister,
+          notes: expenseForm.notes || undefined,
+        }),
       });
 
       alert('✓ Egreso registrado con éxito');
@@ -642,9 +654,11 @@ export default function FlujoCajaPage() {
                 <option value="ALL">Todas las Categorías</option>
                 <option value="SERVICIOS_BASICOS">Servicios Básicos (Luz/Agua)</option>
                 <option value="PLANILLA_PERSONAL">Planilla de Personal</option>
+                <option value="FONDO_ROTATORIO_CREDITO">Préstamos Fondo Rotatorio</option>
                 <option value="MANTENIMIENTO_OBRAS">Mantenimiento y Obras</option>
                 <option value="ADMINISTRATIVOS_LEGALES">Administrativos y Legales</option>
-                <option value="OTROS">Otros Gastos</option>
+                <option value="PUBLICIDAD_PERIFONEO">Publicidad y Perifoneo</option>
+                <option value="IMPREVISTOS_OTROS">Otros Gastos</option>
               </select>
             </div>
 
@@ -687,7 +701,13 @@ export default function FlujoCajaPage() {
                         <td className="p-3 font-mono font-bold text-rose-700">{exp.code}</td>
                         <td className="p-3 text-slate-600">{new Date(exp.date).toLocaleDateString()}</td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            exp.category === 'PLANILLA_PERSONAL'
+                              ? 'bg-purple-100 text-purple-800'
+                              : exp.category === 'FONDO_ROTATORIO_CREDITO'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}>
                             {exp.category.replace(/_/g, ' ')}
                           </span>
                         </td>
@@ -698,9 +718,9 @@ export default function FlujoCajaPage() {
                             <span className="font-mono text-[11px] text-slate-600">
                               {exp.documentType}: {exp.documentNumber || 'S/N'}
                             </span>
-                            {exp.voucherUrl && (
+                            {exp.fileUrl && (
                               <button
-                                onClick={() => setPreviewVoucherUrl(exp.voucherUrl)}
+                                onClick={() => setPreviewVoucherUrl(exp.fileUrl)}
                                 className="text-emerald-600 hover:text-emerald-700 p-0.5"
                                 title="Ver comprobante adjunto"
                               >
@@ -733,7 +753,7 @@ export default function FlujoCajaPage() {
                           </span>
                         </td>
                         <td className="p-3 text-right">
-                          {exp.status === 'PAGADO' && (
+                          {exp.status === 'PAGADO' && !exp.source && (
                             <button
                               onClick={() => handleDeleteExpense(exp.id)}
                               className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
@@ -741,6 +761,11 @@ export default function FlujoCajaPage() {
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
+                          )}
+                          {exp.source && (
+                            <span className="text-[10px] text-slate-400 font-medium italic">
+                              {exp.source === 'STAFF_PAYMENT' ? 'Desde Personal' : 'Desde F. Rotatorio'}
+                            </span>
                           )}
                         </td>
                       </tr>
