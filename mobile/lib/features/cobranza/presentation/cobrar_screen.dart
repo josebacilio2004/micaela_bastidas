@@ -328,6 +328,9 @@ class _CobrarScreenState extends State<CobrarScreen> {
     Map<String, dynamic>? lastPaymentResult;
     bool syncedSuccessfully = false;
 
+    final List<Map<String, dynamic>> paidItems = [];
+    double totalBatchAmount = 0.0;
+
     try {
       if (selectedObs.isNotEmpty && !_forceExtraordinaryPayment) {
         // Pagar cada obligación seleccionada
@@ -337,6 +340,13 @@ class _CobrarScreenState extends State<CobrarScreen> {
           final conceptId = (ob['conceptId'] ?? ob['concept_id'] ?? ob['concept']?['id'] ?? 'concept-default').toString();
           final conceptName = (ob['conceptName'] ?? ob['concept']?['name'] ?? ob['concept_name'] ?? 'Pago').toString();
           final period = (ob['period'] ?? DateFormat('yyyy-MM-dd').format(now)).toString();
+
+          paidItems.add({
+            'conceptName': conceptName,
+            'period': period,
+            'amount': obAmt,
+          });
+          totalBatchAmount += obAmt;
 
           // 1. Guardar en SQLite local
           final localRow = {
@@ -378,6 +388,13 @@ class _CobrarScreenState extends State<CobrarScreen> {
         // Pago extraordinario único
         final idempotencyKey = const Uuid().v4();
         final period = DateFormat('yyyy-MM-dd').format(now);
+        paidItems.add({
+          'conceptName': _selectedConceptName,
+          'period': period,
+          'amount': _currentAmount,
+        });
+        totalBatchAmount = _currentAmount;
+
         final localRow = {
           'idempotency_key': idempotencyKey,
           'merchant_id': _selectedMerchant!['id'],
@@ -429,15 +446,20 @@ class _CobrarScreenState extends State<CobrarScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => ComprobanteScreen(
-            payment: lastPaymentResult ?? {
-              'operationNumber': opNumber,
+            payment: {
+              'operationNumber': lastPaymentResult?['operationNumber'] ?? opNumber,
               'merchant': _selectedMerchant,
-              'concept': {'name': _selectedConceptName},
-              'amount': _currentAmount,
-              'period': DateFormat('yyyy-MM-dd').format(now),
+              'concept': {
+                'name': paidItems.length > 1
+                    ? 'Cuotas Múltiples (${paidItems.length})'
+                    : (paidItems.isNotEmpty ? paidItems.first['conceptName'] : _selectedConceptName)
+              },
+              'amount': paidItems.isNotEmpty ? totalBatchAmount : _currentAmount,
+              'period': paidItems.length == 1 ? paidItems.first['period'] : null,
               'paymentMethod': _selectedPaymentMethod,
               'paidAt': nowIso,
               'isOffline': !syncedSuccessfully,
+              'items': paidItems,
             },
           ),
         ),

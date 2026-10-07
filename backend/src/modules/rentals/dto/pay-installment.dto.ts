@@ -24,6 +24,11 @@ export class PayInstallmentDto {
   @IsOptional()
   notes?: string;
 
+  @ApiProperty({ description: 'Número de cuota (opcional si viene en el cuerpo)', required: false })
+  @IsNumber()
+  @IsOptional()
+  installmentNumber?: number;
+
   @ApiProperty({ description: 'Registrar movimiento de ingreso en la caja de tesorería activa', default: true })
   @IsOptional()
   registerCashIncome?: boolean;

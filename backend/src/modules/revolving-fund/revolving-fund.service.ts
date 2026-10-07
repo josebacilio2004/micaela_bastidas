@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CashRegisterStatus, CashMovementType } from '@prisma/client';
 
 @Injectable()
 export class RevolvingFundService {
@@ -44,8 +45,10 @@ export class RevolvingFundService {
     const orderNumber = 'FR-PREST-' + String(count + 1).padStart(4, '0');
 
     const principal = Number(data.amount);
+    const months = Number(data.termMonths || 1);
     const rate = Number(data.interestRate || 0);
-    const totalAmount = principal + (principal * rate) / 100;
+    const totalInterest = (principal * rate * months) / 100;
+    const totalAmount = Number((principal + totalInterest).toFixed(2));
 
     return this.prisma.loan.create({
       data: {
@@ -54,7 +57,7 @@ export class RevolvingFundService {
         borrowerName: data.borrowerName,
         borrowerDni: data.borrowerDni,
         amount: principal,
-        termMonths: Number(data.termMonths || 1),
+        termMonths: months,
         interestRate: rate,
         totalAmount,
         status: 'VIGENTE',
@@ -97,7 +100,26 @@ export class RevolvingFundService {
 
     const principal = Number(data.principalAmount || 0);
     const interest = Number(data.interestAmount || 0);
-    const total = principal + interest;
+    const total = Number((principal + interest).toFixed(2));
+
+    // Registrar ingreso en caja activa si es cobro en efectivo o general
+    const activeRegister = await this.prisma.cashRegister.findFirst({
+      where: { status: CashRegisterStatus.ABIERTO },
+      orderBy: { openedAt: 'desc' },
+    });
+
+    if (activeRegister && (data.paymentMethod === 'EFECTIVO' || !data.paymentMethod)) {
+      await this.prisma.cashMovement.create({
+        data: {
+          cashRegisterId: activeRegister.id,
+          type: CashMovementType.INGRESO,
+          concept: `Fondo Rotatorio (${loan.orderNumber}): ${data.description || 'Amortización'} - ${loan.borrowerName}`,
+          amount: total,
+          reference: data.receiptNumber || orderNumber,
+          userId: data.createdById || activeRegister.openedById,
+        },
+      });
+    }
 
     const collection = await this.prisma.loanCollection.create({
       data: {

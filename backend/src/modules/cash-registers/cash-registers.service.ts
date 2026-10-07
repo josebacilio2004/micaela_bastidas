@@ -161,13 +161,28 @@ export class CashRegistersService {
     const sanitarySum = sanitarySessions.reduce((acc, s) => acc + Number(s.totalCollected), 0);
 
     const totalCollected = totalPaymentsSum + sanitarySum;
-    const openingTotal = registers.reduce((acc, r) => acc + Number(r.openingAmount), 0);
-    const countedTotal = registers
-      .filter((r) => r.countedCash != null)
-      .reduce((acc, r) => acc + Number(r.countedCash), 0);
-    const differenceTotal = registers
-      .filter((r) => r.difference != null)
-      .reduce((acc, r) => acc + Number(r.difference), 0);
+
+    // Si existen múltiples cajas en el mismo día, el fondo base inicial del día corresponde
+    // a la primera caja abierta (o la única). No sumar las aperturas de turnos sucesivos para no duplicar.
+    const earliestRegister = registers.length > 0 ? registers[registers.length - 1] : null;
+    const openingTotal = earliestRegister ? Number(earliestRegister.openingAmount) : 0;
+
+    let totalMovementsIncome = 0;
+    let totalMovementsExpense = 0;
+    for (const reg of registers) {
+      for (const m of reg.movements || []) {
+        if (m.type === 'INGRESO') totalMovementsIncome += Number(m.amount);
+        if (m.type === 'EGRESO') totalMovementsExpense += Number(m.amount);
+      }
+    }
+    const netMovements = totalMovementsIncome - totalMovementsExpense;
+    const expectedTotal = Number((openingTotal + totalCollected + netMovements).toFixed(2));
+
+    const latestClosedRegister = registers.find((r) => r.status === 'CERRADO' && r.countedCash != null);
+    const countedTotal = latestClosedRegister ? Number(latestClosedRegister.countedCash) : 0;
+    const differenceTotal = latestClosedRegister && latestClosedRegister.difference != null
+      ? Number(latestClosedRegister.difference)
+      : Number((countedTotal - expectedTotal).toFixed(2));
 
     return {
       date: startOfDay.toISOString().split('T')[0],
@@ -184,7 +199,8 @@ export class CashRegistersService {
         totalPayments: totalPaymentsSum,
         totalCollected,
         openingTotal,
-        expectedTotal: openingTotal + totalCollected,
+        netMovements,
+        expectedTotal,
         countedTotal,
         differenceTotal,
       },

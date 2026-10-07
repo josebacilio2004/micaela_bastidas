@@ -105,9 +105,49 @@ class ComprobanteScreen extends StatelessWidget {
                       _ticketRow('PAGADOR:', payerName, isBold: true),
                       _ticketRow('DNI / DOC:', dni),
                       _ticketRow('PUESTO / ÁREA:', stallCode),
-                      _ticketRow('CONCEPTO:', conceptName),
-                      if (payment['period'] != null)
-                        _ticketRow('PERÍODO:', payment['period'].toString()),
+
+                      if (payment['items'] != null && (payment['items'] as List).isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        _dashedDivider(),
+                        const SizedBox(height: 6),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'DETALLE DE CUOTAS / CONCEPTOS:',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black87),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        ...((payment['items'] as List).map((item) {
+                          final cName = (item['conceptName'] ?? 'Concepto').toString();
+                          final pName = (item['period'] ?? '').toString();
+                          final iAmt = (item['amount'] is num)
+                              ? (item['amount'] as num).toDouble()
+                              : (double.tryParse(item['amount']?.toString() ?? '0') ?? 0.0);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '$cName ${pName.isNotEmpty ? "($pName)" : ""}',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87),
+                                  ),
+                                ),
+                                Text(
+                                  'S/ ${iAmt.toStringAsFixed(2)}',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                                ),
+                              ],
+                            ),
+                          );
+                        })),
+                      ] else ...[
+                        _ticketRow('CONCEPTO:', conceptName),
+                        if (payment['period'] != null)
+                          _ticketRow('PERÍODO:', payment['period'].toString()),
+                      ],
 
                       const SizedBox(height: 8),
                       _dashedDivider(),

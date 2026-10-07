@@ -83,6 +83,26 @@ export class ReportsService {
     });
     const pendingAmount = pendingObligations.reduce((a, b) => a + Number(b.amount), 0);
 
+    // 6. Tendencia de los últimos 7 días
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
+      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+      const dayPayments = paymentsMonth.filter((p) => new Date(p.paidAt) >= start && new Date(p.paidAt) <= end);
+      const daySanitary = sanitaryMonth.filter((s) => new Date(s.startTime) >= start && new Date(s.startTime) <= end);
+      const dayTotal =
+        dayPayments.reduce((acc, p) => acc + Number(p.amount), 0) +
+        daySanitary.reduce((acc, s) => acc + Number(s.totalCollected || 0), 0);
+      const dayName = d.toLocaleDateString('es-PE', { weekday: 'short' });
+      last7Days.push({
+        day: dayName.charAt(0).toUpperCase() + dayName.slice(1, 3),
+        date: `${d.getDate()}/${d.getMonth() + 1}`,
+        recaudacion: Number(dayTotal.toFixed(2)),
+      });
+    }
+
     return {
       today: {
         total: totalToday,
@@ -97,6 +117,7 @@ export class ReportsService {
         total: totalMonth,
         paymentsCount: paymentsMonth.length,
       },
+      last7Days,
       merchants: {
         total: sociosCount + ambulantesFijosCount + ambulantesTempCount,
         socios: sociosCount,

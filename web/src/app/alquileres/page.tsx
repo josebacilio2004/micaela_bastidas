@@ -782,8 +782,33 @@ export default function AlquileresPage() {
 
       {/* MODAL CONTRATO LEGAL Y CRONOGRAMA IMPRIMIBLE */}
       {isContractDocModalOpen && activeDocContract && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto space-y-5 font-serif text-slate-900">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white print:static print:z-auto print:block">
+          <style dangerouslySetInnerHTML={{ __html: `
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #printable-rental-contract, #printable-rental-contract * {
+                visibility: visible !important;
+              }
+              #printable-rental-contract {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 10mm 15mm !important;
+                background: white !important;
+                border: none !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}} />
+          <div id="printable-rental-contract" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto space-y-5 font-serif text-slate-900 print:max-h-none print:overflow-visible print:p-0 print:border-none print:shadow-none">
             {/* Cabecera Oficial */}
             <div className="text-center border-b-2 border-slate-900 pb-4 font-sans">
               <h2 className="text-base font-black uppercase tracking-wider">{activeDocContract.association}</h2>
@@ -863,7 +888,7 @@ export default function AlquileresPage() {
             </div>
 
             {/* Botones */}
-            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-200 font-sans">
+            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-200 font-sans no-print print:hidden">
               <button
                 onClick={() => setIsContractDocModalOpen(false)}
                 className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600"

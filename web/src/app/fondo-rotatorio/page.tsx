@@ -127,6 +127,30 @@ export default function FondoRotatorioPage() {
     }
   };
 
+  const handleSelectLoanForCollection = (loanId: string, quotaNumber?: number) => {
+    const l = loans.find((item) => item.id === loanId);
+    if (!l) {
+      setCollectionForm((prev) => ({ ...prev, loanId: '' }));
+      return;
+    }
+    const months = Number(l.termMonths) || 1;
+    const principal = Number(l.amount);
+    const rate = Number(l.interestRate || 0);
+    const monthlyPrincipal = Number((principal / months).toFixed(2));
+    const monthlyInterest = Number(((principal * rate) / 100).toFixed(2));
+    const paidCount = (l.collections || []).length;
+    const qNum = quotaNumber || Math.min(months, paidCount + 1);
+
+    setCollectionForm({
+      loanId: l.id,
+      description: `Cuota ${qNum} de ${months} - Amortización Fondo Rotatorio`,
+      principalAmount: monthlyPrincipal,
+      interestAmount: monthlyInterest,
+      paymentMethod: 'EFECTIVO',
+      receiptNumber: `VCH-FR-${Date.now().toString().slice(-6)}`,
+    });
+  };
+
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -134,7 +158,7 @@ export default function FondoRotatorioPage() {
         method: 'POST',
         body: JSON.stringify(collectionForm),
       });
-      alert('✓ Cobranza registrada exitosamente');
+      alert('✓ Cobranza registrada exitosamente e ingresada a Caja');
       setIsCollectionModalOpen(false);
       setPrintReceiptData(res);
       fetchData();
@@ -252,7 +276,12 @@ export default function FondoRotatorioPage() {
                       <td className="p-3 text-slate-600">{new Date(l.date).toLocaleDateString()}</td>
                       <td className="p-3 font-bold text-slate-900">{l.borrowerName}</td>
                       <td className="p-3 font-mono text-slate-600">{l.borrowerDni}</td>
-                      <td className="p-3 text-slate-700">{l.termMonths} meses ({l.interestRate}%)</td>
+                      <td className="p-3 text-slate-700">
+                        <span className="font-semibold block">{l.termMonths} meses ({l.interestRate}%)</span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {(l.collections || []).length}/{l.termMonths} cuotas
+                        </span>
+                      </td>
                       <td className="p-3 font-mono font-bold text-slate-800">S/ {Number(l.amount).toFixed(2)}</td>
                       <td className="p-3 font-mono font-bold text-indigo-800">S/ {Number(l.totalAmount).toFixed(2)}</td>
                       <td className="p-3">
@@ -269,14 +298,29 @@ export default function FondoRotatorioPage() {
                         </span>
                       </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => viewLoanContract(l.id)}
-                          className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
-                          title="Ver Contrato y Cronograma de Amortización"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Contrato</span>
-                        </button>
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={() => viewLoanContract(l.id)}
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                            title="Ver Contrato y Cronograma de Amortización"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Contrato</span>
+                          </button>
+                          {l.status !== 'CANCELADO' && (
+                            <button
+                              onClick={() => {
+                                handleSelectLoanForCollection(l.id);
+                                setIsCollectionModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                              title="Cobrar Cuota según Cronograma"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              <span>Cobrar Cuota</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -456,7 +500,7 @@ export default function FondoRotatorioPage() {
                 <select
                   required
                   value={collectionForm.loanId}
-                  onChange={(e) => setCollectionForm({ ...collectionForm, loanId: e.target.value })}
+                  onChange={(e) => handleSelectLoanForCollection(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
                   <option value="">-- Seleccionar Préstamo --</option>
@@ -464,11 +508,49 @@ export default function FondoRotatorioPage() {
                     .filter((l) => l.status !== 'CANCELADO')
                     .map((l) => (
                       <option key={l.id} value={l.id}>
-                        {l.orderNumber} - {l.borrowerName} (Saldo: S/ {l.totalAmount})
+                        {l.orderNumber} - {l.borrowerName} (Capital: S/ {l.amount} | Total: S/ {l.totalAmount})
                       </option>
                     ))}
                 </select>
               </div>
+
+              {/* Selector de Cuota rápida si hay préstamo seleccionado */}
+              {collectionForm.loanId && (() => {
+                const selLoan = loans.find((l) => l.id === collectionForm.loanId);
+                if (!selLoan) return null;
+                const totalMonths = Number(selLoan.termMonths) || 1;
+                const paidCount = (selLoan.collections || []).length;
+                return (
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="font-bold text-slate-700">Seleccionar Cuota del Cronograma:</span>
+                      <span className="text-emerald-700 font-bold font-mono">{paidCount}/{totalMonths} Pagadas</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from({ length: totalMonths }, (_, i) => i + 1).map((qNum) => {
+                        const isAlreadyPaid = qNum <= paidCount;
+                        const isCurrent = collectionForm.description.includes(`Cuota ${qNum} `);
+                        return (
+                          <button
+                            key={qNum}
+                            type="button"
+                            onClick={() => handleSelectLoanForCollection(selLoan.id, qNum)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                              isCurrent
+                                ? 'bg-indigo-600 text-white shadow'
+                                : isAlreadyPaid
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            Cuota {qNum} {isAlreadyPaid ? '✓' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Descripción de la Cuota *</label>
@@ -592,8 +674,33 @@ export default function FondoRotatorioPage() {
 
       {/* Modal Contrato y Cronograma de Amortización */}
       {contractData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-3xl shadow-2xl border border-slate-100 my-8">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static print:z-auto print:block">
+          <style dangerouslySetInnerHTML={{ __html: `
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #printable-fund-contract, #printable-fund-contract * {
+                visibility: visible !important;
+              }
+              #printable-fund-contract {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 10mm 15mm !important;
+                background: white !important;
+                border: none !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}} />
+          <div id="printable-fund-contract" className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-3xl shadow-2xl border border-slate-100 my-8 print:my-0 print:p-0 print:border-none print:shadow-none">
             <div className="flex justify-between items-center pb-4 border-b border-slate-200">
               <div className="flex items-center space-x-2">
                 <FileText className="w-5 h-5 text-indigo-600" />
@@ -709,7 +816,7 @@ export default function FondoRotatorioPage() {
             </div>
 
             {/* Actions */}
-            <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">
+            <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2 no-print print:hidden">
               <button
                 type="button"
                 onClick={() => setContractData(null)}

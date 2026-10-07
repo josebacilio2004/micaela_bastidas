@@ -752,6 +752,10 @@ export default function CajaPage() {
                 <p className="text-[11px] text-slate-500 mt-1">Efectivo inicial en monedas o billetes pequeños disponible para vueltos.</p>
               </div>
 
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+                <span className="font-bold">💡 Regla de Arqueo:</span> Ingrese solo el sencillo base para dar vuelto (ej: S/ 0, S/ 50 o S/ 100). No coloque el acumulado recaudado de cobros previos de la jornada para no duplicar los ingresos en el consolidado general.
+              </div>
+
               <div className="flex space-x-2 pt-1">
                 {[0, 20, 50, 100].map((amt) => (
                   <button
