@@ -23,6 +23,11 @@ import {
   Building2,
   ShoppingBag,
   IdCard,
+  FolderOpen,
+  FileCheck2,
+  Eye,
+  Download,
+  FolderPlus,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -51,6 +56,25 @@ export default function PadronPage() {
 
   // Carnet QR Individual Modal State
   const [carnetMerchant, setCarnetMerchant] = useState<any>(null);
+
+  // Expediente / Legajo Digital de Documentos por Comerciante
+  const [docMerchant, setDocMerchant] = useState<any>(null);
+  const [merchantDocs, setMerchantDocs] = useState<any[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [docFilterConcept, setDocFilterConcept] = useState('ALL');
+  const [docSearch, setDocSearch] = useState('');
+  const [docYearFilter, setDocYearFilter] = useState('ALL');
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [showDocUploadForm, setShowDocUploadForm] = useState(false);
+  const [newDocForm, setNewDocForm] = useState({
+    title: '',
+    concept: 'IDENTIDAD',
+    externalNumber: '',
+    documentDate: new Date().toISOString().split('T')[0],
+    description: '',
+  });
+  const [newDocFile, setNewDocFile] = useState<File | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<any>(null);
 
   // Create modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -217,6 +241,94 @@ export default function PadronPage() {
       }
     } catch (e: any) {
       alert(e.message || 'Error al subir documento DNI');
+    }
+  };
+
+  // --- EXPEDIENTE Y LEGAJO DIGITAL POR COMERCIANTE ---
+  const fetchMerchantDocs = async (merchantId: string) => {
+    try {
+      setLoadingDocs(true);
+      const res = await apiRequest(`/documents?merchantId=${merchantId}`);
+      setMerchantDocs(Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching merchant docs:', err);
+    } finally {
+      setLoadingDocs(false);
+    }
+  };
+
+  const openMerchantDocsModal = (merchant: any) => {
+    setDocMerchant(merchant);
+    setShowDocUploadForm(false);
+    setDocFilterConcept('ALL');
+    setDocSearch('');
+    setDocYearFilter('ALL');
+    fetchMerchantDocs(merchant.id);
+  };
+
+  const handleUploadMerchantDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDocFile || !docMerchant) {
+      alert('Por favor seleccione un archivo para subir');
+      return;
+    }
+
+    try {
+      setIsUploadingDoc(true);
+      const formData = new FormData();
+      formData.append('file', newDocFile);
+      formData.append('title', newDocForm.title.trim() || newDocFile.name);
+      formData.append('concept', newDocForm.concept);
+      if (newDocForm.externalNumber.trim()) formData.append('externalNumber', newDocForm.externalNumber.trim());
+      if (newDocForm.documentDate) formData.append('documentDate', newDocForm.documentDate);
+      if (newDocForm.description.trim()) formData.append('description', newDocForm.description.trim());
+      formData.append('merchantId', docMerchant.id);
+
+      const token = typeof window !== 'undefined' ? localStorage.getItem('micaela_token') : null;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '/api' : 'http://backend:3000/api');
+      const res = await fetch(`${apiUrl}/documents/upload`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Error al subir documento al expediente');
+      }
+
+      alert('✓ Documento archivado correctamente en el expediente digital');
+      setNewDocFile(null);
+      setNewDocForm({
+        title: '',
+        concept: 'IDENTIDAD',
+        externalNumber: '',
+        documentDate: new Date().toISOString().split('T')[0],
+        description: '',
+      });
+      setShowDocUploadForm(false);
+      fetchMerchantDocs(docMerchant.id);
+      fetchData(); // actualizar contador
+    } catch (err: any) {
+      alert(err.message || 'Error al subir documento');
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
+  const handleDeleteMerchantDoc = async (docId: string) => {
+    if (!confirm('¿Está seguro de eliminar este documento del expediente?')) return;
+    try {
+      await apiRequest(`/documents/${docId}`, { method: 'DELETE' });
+      alert('✓ Documento retirado del expediente');
+      if (docMerchant) {
+        fetchMerchantDocs(docMerchant.id);
+        fetchData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error al eliminar');
     }
   };
 
@@ -700,6 +812,7 @@ export default function PadronPage() {
               <th className="py-3 px-4">Condición / Tipo</th>
               <th className="py-3 px-4">Puesto</th>
               <th className="py-3 px-4">Giro / Rubro</th>
+              <th className="py-3 px-4 text-center">Expediente / Docs</th>
               <th className="py-3 px-4">DNI Escaneado</th>
               <th className="py-3 px-4">Recibo Luz/Agua</th>
               <th className="py-3 px-4">Deuda</th>
@@ -709,13 +822,13 @@ export default function PadronPage() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={10} className="py-8 text-center text-slate-400">
+                <td colSpan={11} className="py-8 text-center text-slate-400">
                   Cargando padrón oficial de comerciantes...
                 </td>
               </tr>
             ) : filteredAndSortedMerchants.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-8 text-center text-slate-400">
+                <td colSpan={11} className="py-8 text-center text-slate-400">
                   No se encontraron comerciantes registrados con los filtros seleccionados.
                 </td>
               </tr>
@@ -815,6 +928,22 @@ export default function PadronPage() {
                     <span className="font-semibold text-slate-700">
                       {m.businessCategory || '-'}
                     </span>
+                  </td>
+
+                  {/* Expediente Digital / Documentos */}
+                  <td className="py-3 px-4 text-center">
+                    <button
+                      onClick={() => openMerchantDocsModal(m)}
+                      className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm ${
+                        (m._count?.documents || 0) > 0
+                          ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                      }`}
+                      title="Abrir Expediente y Legajo Digital del Comerciante"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{m._count?.documents || 0} Docs</span>
+                    </button>
                   </td>
 
                   {/* DNI Digital Escaneado */}
@@ -1969,6 +2098,439 @@ export default function PadronPage() {
               >
                 <Printer className="w-4 h-4" />
                 <span>Imprimir Carta Notificatoria (A4)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: EXPEDIENTE Y LEGAJO DIGITAL POR COMERCIANTE */}
+      {docMerchant && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-200 overflow-hidden my-auto flex flex-col max-h-[90vh]">
+            {/* Header del Expediente */}
+            <div className="p-5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-3">
+                {docMerchant.photoUrl ? (
+                  <img
+                    src={docMerchant.photoUrl}
+                    alt={docMerchant.lastName}
+                    className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-400 shadow-md"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-black text-lg border-2 border-emerald-400/50 shadow-md">
+                    {docMerchant.lastName?.[0] || 'C'}
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <FolderOpen className="w-4 h-4 text-emerald-400" />
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                      Legajo y Expediente Digital
+                    </span>
+                  </div>
+                  <h2 className="text-base font-black uppercase text-white tracking-tight">
+                    {docMerchant.lastName}, {docMerchant.firstName}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-300">
+                    <span className="font-mono bg-slate-800 px-2 py-0.5 rounded font-bold">DNI: {docMerchant.dni}</span>
+                    <span className="font-mono bg-slate-800 px-2 py-0.5 rounded text-emerald-300 font-bold">Código: {docMerchant.internalCode}</span>
+                    {docMerchant.stall && (
+                      <span className="bg-emerald-800 text-white px-2 py-0.5 rounded font-bold">
+                        Puesto {docMerchant.stall.code}
+                      </span>
+                    )}
+                    <span className="bg-slate-700 px-2 py-0.5 rounded">
+                      {docMerchant.merchantType?.name || 'Socio'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => setShowDocUploadForm(!showDocUploadForm)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md flex items-center space-x-1.5 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{showDocUploadForm ? 'Cerrar Formulario' : 'Subir Documento'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDocMerchant(null)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Formulario de Carga de Documento (Colapsable) */}
+            {showDocUploadForm && (
+              <form onSubmit={handleUploadMerchantDoc} className="p-5 bg-emerald-50/60 border-b border-emerald-200 text-xs space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="font-black uppercase text-emerald-900 flex items-center gap-1.5">
+                    <Upload className="w-4 h-4 text-emerald-600" />
+                    Archivar Nuevo Documento en el Expediente
+                  </h3>
+                  <span className="text-[11px] text-slate-500">Soporta PDF, JPG, PNG, WEBP (Hasta 30MB)</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                      Nombre / Título del Documento *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Carné de Sanidad 2026, Copia de DNI, Declaración Jurada..."
+                      value={newDocForm.title}
+                      onChange={(e) => setNewDocForm({ ...newDocForm, title: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    {/* Sugerencias Rápidas */}
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {['Copia DNI Titular', 'Carné de Sanidad', 'Contrato de Puesto', 'Declaración Jurada', 'Certificado Salud', 'Constancia No Adeudo'].map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => setNewDocForm({ ...newDocForm, title: chip })}
+                          className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[10px] font-bold transition"
+                        >
+                          + {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                      Concepto / Categoría *
+                    </label>
+                    <select
+                      value={newDocForm.concept}
+                      onChange={(e) => setNewDocForm({ ...newDocForm, concept: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="IDENTIDAD">Identidad (DNI / RUC)</option>
+                      <option value="CONTRATO">Contratos y Arrendamientos</option>
+                      <option value="SANITARIO">Sanitarios (Carné / Salud)</option>
+                      <option value="SOLICITUD">Solicitudes y Trámites</option>
+                      <option value="CONSTANCIA_PAGO">Constancias de Pago y Recibos</option>
+                      <option value="DECLARACION_JURADA">Declaraciones Juradas</option>
+                      <option value="ACTAS_SANCION">Notificaciones y Compromisos</option>
+                      <option value="OTROS">Otros Documentos</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                      N° Documento Externo / Trámite
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: 045-2024-MUNI o DNI-Titular"
+                      value={newDocForm.externalNumber}
+                      onChange={(e) => setNewDocForm({ ...newDocForm, externalNumber: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                      Fecha Oficial del Documento
+                    </label>
+                    <input
+                      type="date"
+                      value={newDocForm.documentDate}
+                      onChange={(e) => setNewDocForm({ ...newDocForm, documentDate: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                      Seleccionar Archivo Digital *
+                    </label>
+                    <input
+                      type="file"
+                      required
+                      accept=".pdf,image/*,.doc,.docx"
+                      onChange={(e) => setNewDocFile(e.target.files?.[0] || null)}
+                      className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-2">
+                  <input
+                    type="text"
+                    placeholder="Descripción u observaciones complementarias..."
+                    value={newDocForm.description}
+                    onChange={(e) => setNewDocForm({ ...newDocForm, description: e.target.value })}
+                    className="flex-1 mr-3 px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs focus:outline-none"
+                  />
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowDocUploadForm(false)}
+                      className="px-3 py-1.5 border border-slate-300 text-slate-600 rounded-xl font-bold hover:bg-slate-100 transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUploadingDoc}
+                      className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-black shadow transition flex items-center space-x-1"
+                    >
+                      {isUploadingDoc ? <span>Subiendo...</span> : <span>Archivar en Expediente</span>}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {/* Barra de Filtros del Expediente */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+              {/* Concept Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { id: 'ALL', label: 'Todos' },
+                  { id: 'IDENTIDAD', label: 'Identidad' },
+                  { id: 'CONTRATO', label: 'Contratos' },
+                  { id: 'SANITARIO', label: 'Sanitarios' },
+                  { id: 'SOLICITUD', label: 'Solicitudes' },
+                  { id: 'CONSTANCIA_PAGO', label: 'Pagos' },
+                  { id: 'DECLARACION_JURADA', label: 'DDJJ' },
+                  { id: 'OTROS', label: 'Otros' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setDocFilterConcept(item.id)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                      docFilterConcept === item.id
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    {item.label}
+                    {item.id === 'ALL'
+                      ? ` (${merchantDocs.length})`
+                      : ` (${merchantDocs.filter((d) => d.concept === item.id).length})`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search & Year */}
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar por título, N°..."
+                    value={docSearch}
+                    onChange={(e) => setDocSearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs w-48 focus:outline-none"
+                  />
+                </div>
+
+                <select
+                  value={docYearFilter}
+                  onChange={(e) => setDocYearFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
+                >
+                  <option value="ALL">Todos los Años</option>
+                  {[2026, 2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018].map((y) => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Listado de Documentos del Expediente */}
+            <div className="p-5 overflow-y-auto flex-1">
+              {loadingDocs ? (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  Cargando expediente digital del comerciante...
+                </div>
+              ) : merchantDocs.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-3">
+                  <FolderOpen className="w-12 h-12 text-slate-300 mx-auto" />
+                  <p className="font-bold text-sm text-slate-600">Este comerciante aún no tiene documentos en su legajo</p>
+                  <p className="text-xs max-w-sm mx-auto">
+                    Haga clic en el botón <b>&quot;Subir Documento&quot;</b> arriba para archivar DNI, carné sanitario, contratos o declaraciones juradas.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {merchantDocs
+                    .filter((doc) => {
+                      if (docFilterConcept !== 'ALL' && doc.concept !== docFilterConcept) return false;
+                      if (
+                        docYearFilter !== 'ALL' &&
+                        String(doc.year) !== docYearFilter &&
+                        !doc.documentDate?.startsWith(docYearFilter)
+                      )
+                        return false;
+                      if (docSearch) {
+                        const q = docSearch.toLowerCase();
+                        const match =
+                          doc.title?.toLowerCase().includes(q) ||
+                          doc.externalNumber?.toLowerCase().includes(q) ||
+                          doc.fileName?.toLowerCase().includes(q) ||
+                          doc.description?.toLowerCase().includes(q);
+                        if (!match) return false;
+                      }
+                      return true;
+                    })
+                    .map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="p-3.5 bg-white border border-slate-200 rounded-2xl hover:border-emerald-300 hover:shadow-sm transition flex items-start justify-between gap-3"
+                      >
+                        <div className="flex items-start space-x-3 min-w-0">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-xs ${
+                              doc.fileType?.includes('PDF')
+                                ? 'bg-red-50 text-red-600 border border-red-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}
+                          >
+                            {doc.fileType || 'DOC'}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-slate-900 text-xs truncate" title={doc.title}>
+                              {doc.title}
+                            </h4>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px]">
+                              <span className="px-1.5 py-0.2 rounded font-black uppercase bg-slate-100 text-slate-700">
+                                {doc.concept?.replace(/_/g, ' ')}
+                              </span>
+                              {doc.externalNumber && (
+                                <span className="font-mono text-slate-500 font-bold">
+                                  N° {doc.externalNumber}
+                                </span>
+                              )}
+                              <span className="text-slate-400">
+                                {new Date(doc.documentDate || doc.createdAt).toLocaleDateString('es-PE')}
+                              </span>
+                            </div>
+                            {doc.description && (
+                              <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">{doc.description}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc(doc)}
+                            className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                            title="Previsualizar en Pantalla"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <a
+                            href={doc.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download={doc.fileName}
+                            className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition"
+                            title="Descargar Documento"
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMerchantDoc(doc.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
+                            title="Eliminar del Expediente"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer Modal */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs">
+              <span className="font-bold text-slate-500">
+                Total de Documentos en Legajo: {merchantDocs.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDocMerchant(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition"
+              >
+                Cerrar Expediente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: VISOR Y PREVIEW DE DOCUMENTO */}
+      {previewDoc && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[60] flex items-center justify-center p-3 sm:p-6">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+            <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-sm">{previewDoc.title}</h3>
+                <p className="text-[11px] text-slate-400 font-mono">
+                  Concepto: {previewDoc.concept} | {previewDoc.fileName}
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={previewDoc.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Abrir en Nueva Pestaña</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-100 flex-1 overflow-auto flex items-center justify-center">
+              {previewDoc.fileUrl?.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={previewDoc.fileUrl}
+                  className="w-full h-[72vh] rounded-2xl border border-slate-200 bg-white"
+                  title={previewDoc.title}
+                />
+              ) : (
+                <img
+                  src={previewDoc.fileUrl}
+                  alt={previewDoc.title}
+                  className="max-h-[72vh] max-w-full object-contain rounded-2xl shadow-md border border-slate-200 bg-white"
+                />
+              )}
+            </div>
+
+            <div className="p-3 bg-white border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewDoc(null)}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold"
+              >
+                Cerrar Visor
               </button>
             </div>
           </div>

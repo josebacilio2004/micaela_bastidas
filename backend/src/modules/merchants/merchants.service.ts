@@ -34,7 +34,10 @@ export class MerchantsService {
         sector: true,
         stall: true,
         _count: {
-          select: { obligations: { where: { status: 'PENDIENTE' } } },
+          select: {
+            obligations: { where: { status: 'PENDIENTE' } },
+            documents: true,
+          },
         },
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
