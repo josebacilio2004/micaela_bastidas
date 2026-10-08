@@ -1299,38 +1299,43 @@ async function main() {
   // 0. LIMPIEZA PREVIA COMPLETA DE LA BASE DE DATOS
   console.log('--> Limpiando base de datos previa...');
   try {
-    await prisma.faenaAttendance.deleteMany();
-    await prisma.faena.deleteMany();
-    await prisma.attendanceEvent.deleteMany();
-    await prisma.meeting.deleteMany();
-    await prisma.advertisement.deleteMany();
-    await prisma.marketDocument.deleteMany();
-    await prisma.loanCollection.deleteMany();
-    await prisma.loan.deleteMany();
-    await prisma.ticket.deleteMany();
-    await prisma.sanitaryEntryTicket.deleteMany();
-    await prisma.sanitaryServiceSession.deleteMany();
-    await prisma.staffPayment.deleteMany();
-    await prisma.staffMember.deleteMany();
-    await prisma.camera.deleteMany();
-    await prisma.auditLog.deleteMany();
-    await prisma.cashMovement.deleteMany();
-    await prisma.payment.deleteMany();
-    await prisma.paymentObligation.deleteMany();
-    await prisma.merchant.deleteMany();
-    await prisma.marketStall.deleteMany();
-    await prisma.sector.deleteMany();
-    await prisma.rate.deleteMany();
-    await prisma.paymentConcept.deleteMany();
-    await prisma.userRole.deleteMany();
-    await prisma.role.deleteMany();
-    await prisma.syncOperation.deleteMany();
-    await prisma.syncBatch.deleteMany();
-    await prisma.device.deleteMany();
-    await prisma.cashRegister.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.businessCategory.deleteMany();
-    await prisma.merchantType.deleteMany();
+    await prisma.stallRentalInstallment.deleteMany().catch(() => {});
+    await prisma.stallRentalContract.deleteMany().catch(() => {});
+    await prisma.marketExpense.deleteMany().catch(() => {});
+    await prisma.advertisingScript.deleteMany().catch(() => {});
+    await prisma.faenaAttendance.deleteMany().catch(() => {});
+    await prisma.faena.deleteMany().catch(() => {});
+    await prisma.attendanceEvent.deleteMany().catch(() => {});
+    await prisma.meeting.deleteMany().catch(() => {});
+    await prisma.advertisement.deleteMany().catch(() => {});
+    await prisma.marketDocument.deleteMany().catch(() => {});
+    await prisma.loanCollection.deleteMany().catch(() => {});
+    await prisma.loan.deleteMany().catch(() => {});
+    await prisma.ticket.deleteMany().catch(() => {});
+    await prisma.sanitaryEntryTicket.deleteMany().catch(() => {});
+    await prisma.sanitaryServiceSession.deleteMany().catch(() => {});
+    await prisma.staffPayment.deleteMany().catch(() => {});
+    await prisma.staffMember.deleteMany().catch(() => {});
+    await prisma.camera.deleteMany().catch(() => {});
+    await prisma.auditLog.deleteMany().catch(() => {});
+    await prisma.cashMovement.deleteMany().catch(() => {});
+    await prisma.payment.deleteMany().catch(() => {});
+    await prisma.paymentObligation.deleteMany().catch(() => {});
+    await prisma.merchant.updateMany({ data: { stallId: null } }).catch(() => {});
+    await prisma.merchant.deleteMany().catch(() => {});
+    await prisma.marketStall.deleteMany().catch(() => {});
+    await prisma.sector.deleteMany().catch(() => {});
+    await prisma.rate.deleteMany().catch(() => {});
+    await prisma.paymentConcept.deleteMany().catch(() => {});
+    await prisma.userRole.deleteMany().catch(() => {});
+    await prisma.role.deleteMany().catch(() => {});
+    await prisma.syncOperation.deleteMany().catch(() => {});
+    await prisma.syncBatch.deleteMany().catch(() => {});
+    await prisma.device.deleteMany().catch(() => {});
+    await prisma.cashRegister.deleteMany().catch(() => {});
+    await prisma.user.deleteMany().catch(() => {});
+    await prisma.businessCategory.deleteMany().catch(() => {});
+    await prisma.merchantType.deleteMany().catch(() => {});
     console.log('✓ Base de datos vaciada con éxito (estado limpio)');
   } catch (err: any) {
     console.warn('Advertencia durante limpieza previa:', err.message);
@@ -1671,31 +1676,63 @@ async function main() {
 
   for (const m of officialSociosData) {
     const stall = createdStalls[m.stallCode];
-    const merchant = await prisma.merchant.upsert({
-      where: { dni: m.dni },
-      update: {
-        firstName: m.firstName,
-        lastName: m.lastName,
-        memberCondition: m.cond as MemberCondition,
-        stallId: stall?.id,
-        businessCategory: m.businessCategory,
-        observations: m.observations,
-      },
-      create: {
-        internalCode: m.internalCode,
-        qrCode: 'MB-QR-' + m.dni,
-        firstName: m.firstName,
-        lastName: m.lastName,
-        dni: m.dni,
-        merchantTypeId: createdTypes['SOCIO'].id,
-        memberCondition: m.cond as MemberCondition,
-        sectorId: createdSectors[m.sectorCode].id,
-        stallId: stall?.id,
-        businessCategory: m.businessCategory,
-        status: MerchantStatus.ACTIVO,
-        observations: m.observations,
+
+    // Desvincular cualquier comerciante previo que pudiera tener este puesto
+    if (stall?.id) {
+      await prisma.merchant.updateMany({
+        where: { stallId: stall.id, NOT: { dni: m.dni } },
+        data: { stallId: null },
+      });
+    }
+
+    // Buscar si ya existe por DNI o por código interno
+    const existing = await prisma.merchant.findFirst({
+      where: {
+        OR: [
+          { dni: m.dni },
+          { internalCode: m.internalCode },
+        ],
       },
     });
+
+    let merchant;
+    if (existing) {
+      merchant = await prisma.merchant.update({
+        where: { id: existing.id },
+        data: {
+          internalCode: m.internalCode,
+          qrCode: 'MB-QR-' + m.dni,
+          firstName: m.firstName,
+          lastName: m.lastName,
+          dni: m.dni,
+          merchantTypeId: createdTypes['SOCIO'].id,
+          memberCondition: m.cond as MemberCondition,
+          sectorId: createdSectors[m.sectorCode].id,
+          stallId: stall?.id,
+          businessCategory: m.businessCategory,
+          status: MerchantStatus.ACTIVO,
+          observations: m.observations,
+        },
+      });
+    } else {
+      merchant = await prisma.merchant.create({
+        data: {
+          internalCode: m.internalCode,
+          qrCode: 'MB-QR-' + m.dni,
+          firstName: m.firstName,
+          lastName: m.lastName,
+          dni: m.dni,
+          merchantTypeId: createdTypes['SOCIO'].id,
+          memberCondition: m.cond as MemberCondition,
+          sectorId: createdSectors[m.sectorCode].id,
+          stallId: stall?.id,
+          businessCategory: m.businessCategory,
+          status: MerchantStatus.ACTIVO,
+          observations: m.observations,
+        },
+      });
+    }
+
     createdMerchants[m.internalCode] = merchant;
   }
   console.log('✓ 107 socios oficiales registrados con credenciales QR y puestos asignados');
