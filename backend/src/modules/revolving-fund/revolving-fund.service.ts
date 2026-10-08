@@ -23,7 +23,12 @@ export class RevolvingFundService {
     const loan = await this.prisma.loan.findUnique({
       where: { id },
       include: {
-        merchant: true,
+        merchant: {
+          include: {
+            stall: true,
+            sector: true,
+          },
+        },
         collections: { orderBy: { date: 'asc' } },
       },
     });
@@ -149,10 +154,25 @@ export class RevolvingFundService {
   }
 
   /**
-   * Generar contrato legal y cronograma oficial de amortización
+   * Generar contrato legal oficial completo con las 4 secciones del Word:
+   * 1. Solicitud Formal de Préstamo con Aprobación
+   * 2. Documento de Compromiso y Comprobante de Liquidación
+   * 3. Contrato de Compromiso de Pago (9 Cláusulas Oficiales)
+   * 4. Cronograma Oficial de Amortización y Ficha de Control (CP)
    */
   async getLoanContract(id: string) {
     const loan = await this.findLoanById(id);
+
+    let merchant = loan.merchant;
+    if (!merchant && loan.borrowerDni) {
+      merchant = await this.prisma.merchant.findUnique({
+        where: { dni: loan.borrowerDni },
+        include: {
+          stall: true,
+          sector: true,
+        },
+      });
+    }
 
     const principal = Number(loan.amount);
     const months = Number(loan.termMonths) || 1;
@@ -165,58 +185,207 @@ export class RevolvingFundService {
     const monthlyTotal = Number((totalToPay / months).toFixed(2));
 
     const startDate = new Date(loan.date);
-    const schedule = [];
+    const MESES = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    ];
+
+    const day = startDate.getDate();
+    const monthName = MESES[startDate.getMonth()];
+    const year = startDate.getFullYear();
+    const dateFormatted = `${day} de ${monthName} del ${year}`;
+    const dateSlash = `${String(day).padStart(2, '0')}/${String(startDate.getMonth() + 1).padStart(2, '0')}/${year}`;
+
+    const schedule: any[] = [];
     let remainingBalance = totalToPay;
+    let accumulatedPrincipal = 0;
+    let accumulatedInterest = 0;
 
     for (let i = 1; i <= months; i++) {
       const dueDate = new Date(startDate);
       dueDate.setMonth(startDate.getMonth() + i);
 
-      remainingBalance = Math.max(0, Number((remainingBalance - monthlyTotal).toFixed(2)));
+      // Si es la última cuota, cuadrar cualquier céntimo residual
+      let currPrincipal = monthlyPrincipal;
+      let currInterest = monthlyInterest;
+      if (i === months) {
+        currPrincipal = Number((principal - accumulatedPrincipal).toFixed(2));
+        currInterest = Number((totalInterest - accumulatedInterest).toFixed(2));
+      }
+      accumulatedPrincipal = Number((accumulatedPrincipal + currPrincipal).toFixed(2));
+      accumulatedInterest = Number((accumulatedInterest + currInterest).toFixed(2));
 
-      // Verificar si ya fue amortizada alguna cobranza
+      const currTotal = Number((currPrincipal + currInterest).toFixed(2));
+      remainingBalance = Math.max(0, Number((remainingBalance - currTotal).toFixed(2)));
+
       const isPaid = (loan.collections && loan.collections.length >= i) || loan.status === 'CANCELADO';
+      const dDay = dueDate.getDate();
+      const dMonth = dueDate.getMonth() + 1;
+      const dYear = dueDate.getFullYear();
+      const dueDateSlash = `${String(dDay).padStart(2, '0')}/${String(dMonth).padStart(2, '0')}/${dYear}`;
 
       schedule.push({
         installmentNumber: i,
         dueDate: dueDate.toISOString().split('T')[0],
-        principalAmount: monthlyPrincipal.toFixed(2),
-        interestAmount: monthlyInterest.toFixed(2),
-        totalInstallment: monthlyTotal.toFixed(2),
+        dueDateSlash,
+        principalAmount: currPrincipal.toFixed(2),
+        interestAmount: currInterest.toFixed(2),
+        totalInstallment: currTotal.toFixed(2),
         remainingBalance: remainingBalance.toFixed(2),
         status: isPaid ? 'PAGADO' : 'PENDIENTE',
       });
     }
 
+    const firstDueDateSlash = schedule[0]?.dueDateSlash || dateSlash;
+    const lastDueDateSlash = schedule[schedule.length - 1]?.dueDateSlash || dateSlash;
+    const endDate = new Date(startDate);
+    endDate.setMonth(startDate.getMonth() + months);
+
+    // Separar apellidos y nombres
+    let lastName = merchant?.lastName || '';
+    let firstName = merchant?.firstName || '';
+    if (!lastName && loan.borrowerName) {
+      if (loan.borrowerName.includes(',')) {
+        const parts = loan.borrowerName.split(',');
+        lastName = parts[0].trim();
+        firstName = parts.slice(1).join(',').trim();
+      } else {
+        const words = loan.borrowerName.trim().split(/\s+/);
+        if (words.length >= 3) {
+          lastName = words.slice(0, 2).join(' ');
+          firstName = words.slice(2).join(' ');
+        } else if (words.length === 2) {
+          lastName = words[0];
+          firstName = words[1];
+        } else {
+          lastName = loan.borrowerName;
+          firstName = '';
+        }
+      }
+    }
+
+    const borrowerAddress = merchant?.address || 'JR. SANTOS ATAHUALPA N° 949 SECTOR N° 8 J.P.V. EL TAMBO';
+    const borrowerPhone = merchant?.phone || '----------';
+    const borrowerBusinessCategory = merchant?.businessCategory || 'ABARROTES';
+    const borrowerStallCode = merchant?.stall?.code || 'PUESTO ASOCIADO';
+
     return {
-      title: 'CONTRATO DE MUTUO DINERARIO - FONDO ROTATORIO DE SOLIDARIDAD COMERCIAL',
+      title: 'DOCUMENTO OFICIAL DEL FONDO ROTATORIO: CONTRATO, SOLICITUD, LIQUIDACIÓN Y CRONOGRAMA',
       orderNumber: loan.orderNumber,
-      association: 'ASOCIACIÓN DE COMERCIANTES DEL MERCADO DE ABASTOS MICAELA BASTIDAS',
-      ruc: '20486000001',
-      date: new Date(loan.date).toISOString().split('T')[0],
+      association: 'Asociación de Pequeños Comerciantes del Mercado de Abastos “MICAELA BASTIDAS” de “J.P.V” El Tambo – Huancayo',
+      associationShort: 'APCOMA - “M.B”',
+      ruc: '20486253109',
+      date: dateSlash,
+      dateFormatted,
+      day,
+      monthName,
+      year,
+      president: {
+        name: 'GARCIA COCA FREDDY',
+        dni: '20122038',
+        role: 'PRESIDENTE DE LA APCOMA - “M.B”',
+      },
+      treasurer: {
+        role: 'ENCARGADO(A) DEL FONDO ROTATORIO DE LA APCOMA “M.B”',
+      },
       borrower: {
+        fullName: loan.borrowerName,
         name: loan.borrowerName,
+        lastName,
+        firstName,
         dni: loan.borrowerDni,
-        internalCode: loan.merchant?.internalCode || 'NO_SOCIO',
-        stallCode: (loan.merchant as any)?.stall?.code || 'N/A',
+        address: borrowerAddress,
+        phone: borrowerPhone,
+        businessCategory: borrowerBusinessCategory,
+        stallCode: borrowerStallCode,
+        internalCode: merchant?.internalCode || 'MB-001',
       },
       loanDetails: {
         principalAmount: principal.toFixed(2),
+        principalInWords: numeroALetras(principal),
         interestRateMonthly: rate.toFixed(2),
         termMonths: months,
+        monthlyInterestAmount: monthlyInterest.toFixed(2),
         totalInterest: totalInterest.toFixed(2),
         totalAmountToPay: totalToPay.toFixed(2),
+        totalAmountInWords: numeroALetras(totalToPay),
         monthlyQuota: monthlyTotal.toFixed(2),
+        paymentFrequency: 'MENSUAL',
         status: loan.status,
+        startDateSlash: dateSlash,
+        firstDueDateSlash,
+        endDateSlash: lastDueDateSlash,
+        startDateFormatted: dateFormatted,
+        endDateFormatted: `${endDate.getDate()} de ${MESES[endDate.getMonth()]} del ${endDate.getFullYear()}`,
       },
       schedule,
       clauses: [
-        'PRIMERA (FONDO ROTATORIO): El Fondo Rotatorio es un fondo común solidario instituido por la Asociación para dinamizar el capital comercial de sus socios e inquilinos.',
-        'SEGUNDA (ENTREGA Y RECEPCIÓN): La ASOCIACIÓN entrega en calidad de préstamo el monto acordado, el cual el PRESTATARIO declara recibir a su entera conformidad.',
-        'TERCERA (PLAZO Y VENCIMIENTO): El préstamo se amortizará puntualmente según las fechas detalladas en el Cronograma Oficial Anexo.',
-        'CUARTA (TASA DE INTERÉS COMPENSATORIO): Se pacta una tasa mensual fija solidaria, destinada a cubrir los costos administrativos y reposición del fondo.',
-        'QUINTA (INCUMPLIMIENTO): En caso de mora superior a dos cuotas, la Tesorería suspenderá nuevos créditos y someterá el cobro a la Asamblea General.',
+        'PRIMERO: la asociación en su finalidad de apoyar a los socios trabajadores de APCOMAMB, disponiendo de recursos provenientes de fuentes de (PAGOS ANTERIORES DEL FONDO ROTATORIO Y PAGOS DIARIOS) a fin de prestar un monto de dinero de acuerdo a las necesidades de cada uno de los beneficiarios.',
+        `SEGUNDO: La Asociación a través de sus órganos competentes a solicitud del beneficiario otorga un préstamo el día ${dateFormatted}, EL TAMBO – HUANCAYO, por la suma de S/. ${principal.toFixed(2)} soles, sujeto a intereses efectuados en pagos MENSUALES en plazo de ${months} MESES que inicia el ${dateSlash} y culmina el ${lastDueDateSlash}. La devolución será de acuerdo a la fecha establecida para su cancelación o sus cuotas de pago pero si es diario o semanal se adjuntara un cronograma de pagos al presente COMPROMISO DE PAGO DE FONDO ROTATORIO dicho préstamo será utilizado con la finalidad de que el beneficiario pueda utilizar como apoyo o Incremento de su actividad económica o para fines que crea conveniente.`,
+        'TERCERO: Queda establecido que el monto integro del préstamo otorgado al beneficiario, este se obliga a cancelar en la fecha que le corresponde a la persona encargada de tal acto, la cual se otorgara un recibo de pago por el cual usted estará al pendiente de sus pagos; llevando un control a través del cronograma firmado por el BENEFICIARIO.',
+        'CUARTO: Si se diera el caso de que el BENEFICIARIO no puede cancelar su deuda en la fecha programada solicitara su ampliación previo documento ante la sustentación frente a la ASAMBLEA GENERAL.',
+        'QUINTO: Queda en garantía el Puesto de cada socio el cual constituye primera y preferente garantía real sobre la totalidad de sus bienes. Pudiendo pasar a la administración de la APCOMA-MB, corriendo el riesgo de quedar fuera de la asociación.',
+        'SEXTO: Son causales la resolución del contrato:\n1. Falta de pago oportuno de uno o mas cuotas al cronograma de pago.\n2. El incumplimiento de cualquiera de las condiciones y prohibiciones establecidas en el presente contrato.',
+        'SÉPTIMO: Todas las intervenciones en este contrato se someterán a la Asamblea General de la APCOMAMB, siendo validas por tanto las NOTIFICACIONES O MEMORANDUM que se cursan a los socios BENEFICIARIOS.',
+        'OCTAVO: Realizado el desembolso y la verificación del dinero entregado. EL BENEFICIARIO no tendrá lugar a reclamos de ninguna índole una vez retirado del lugar del desembolso.',
+        'NOVENO: No Existe El Abono A Capital Ni Interés, Todo Calculo De Interés Sera Al Monto Del Capital Prestado Independientemente De Pagar Saldos A Favor Del Capital , De Cancelar El Capital , Se Aplicara El Recalculo De Interés Al Interés Faltante De Pago . El Beneficiario No Tendrá Lugar A Reclamos Dadas La Condiciones Del Préstamo.',
       ],
     };
   }
+}
+
+function numeroALetras(num: number): string {
+  const unidades = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
+  const decenas = ['', 'DIEZ', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const diez_diecinueve = ['DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE'];
+  const centenas = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+
+  function convertirGrupo(n: number): string {
+    if (n === 0) return '';
+    if (n === 100) return 'CIEN';
+    let output = '';
+    const c = Math.floor(n / 100);
+    const d = Math.floor((n % 100) / 10);
+    const u = n % 10;
+
+    if (c > 0) output += centenas[c] + ' ';
+    if (d === 1) {
+      output += diez_diecinueve[u];
+    } else if (d === 2 && u > 0) {
+      output += 'VEINTI' + unidades[u];
+    } else {
+      if (d > 0) output += decenas[d] + (u > 0 ? ' Y ' : '');
+      if (u > 0) output += unidades[u];
+    }
+    return output.trim();
+  }
+
+  const partes = Math.abs(num).toFixed(2).split('.');
+  const entero = parseInt(partes[0], 10);
+  const centavos = partes[1];
+
+  if (entero === 0) return `CERO Y ${centavos}/100`;
+
+  let letras = '';
+  const millones = Math.floor(entero / 1000000);
+  const miles = Math.floor((entero % 1000000) / 1000);
+  const resto = entero % 1000;
+
+  if (millones === 1) {
+    letras += 'UN MILLÓN ';
+  } else if (millones > 1) {
+    letras += convertirGrupo(millones) + ' MILLONES ';
+  }
+
+  if (miles === 1) {
+    letras += 'MIL ';
+  } else if (miles > 1) {
+    letras += convertirGrupo(miles) + ' MIL ';
+  }
+
+  if (resto > 0) {
+    letras += convertirGrupo(resto);
+  }
+
+  return `${letras.trim()} Y ${centavos}/100`;
 }
