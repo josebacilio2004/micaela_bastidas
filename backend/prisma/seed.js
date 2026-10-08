@@ -3,12 +3,1341 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 const prisma = new client_1.PrismaClient();
+// Lista oficial de 107 socios del Mercado de Abastos Micaela Bastidas (Padrón 2026)
+const officialSociosData = [
+    {
+        "num": 1,
+        "internalCode": "MB-COM-00001",
+        "firstName": "TABITA YNES",
+        "lastName": "ALDERETE VELASQUEZ",
+        "dni": "20119761",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-001",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 2,
+        "internalCode": "MB-COM-00002",
+        "firstName": "LIZBETH GIANINA",
+        "lastName": "ALVAREZ CRISTOBAL",
+        "dni": "70395045",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-002",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 3,
+        "internalCode": "MB-COM-00003",
+        "firstName": "JHONATAN",
+        "lastName": "ARIAS GALVAN",
+        "dni": "46386473",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-003",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 4,
+        "internalCode": "MB-COM-00004",
+        "firstName": "MARITZA LUZMILA",
+        "lastName": "ARTEAGA YURIVILCA",
+        "dni": "40153193",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-004",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 5,
+        "internalCode": "MB-COM-00005",
+        "firstName": "FORTUNATA",
+        "lastName": "ARTICA DE CERRÓN",
+        "dni": "19848218",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-005",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 6,
+        "internalCode": "MB-COM-00006",
+        "firstName": "MAGLORIA",
+        "lastName": "ARZAPALO YALI",
+        "dni": "20884719",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-006",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 7,
+        "internalCode": "MB-COM-00007",
+        "firstName": "VICTORIA MÁXIMA",
+        "lastName": "ASTO CCENTE",
+        "dni": "21269103",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-007",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 8,
+        "internalCode": "MB-COM-00008",
+        "firstName": "ISIDORA",
+        "lastName": "ASTO DE MENDOZA",
+        "dni": "19892783",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-008",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 9,
+        "internalCode": "MB-COM-00009",
+        "firstName": "FLORENCIA",
+        "lastName": "AYLLÓN SERVA",
+        "dni": "19839679",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-009",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 10,
+        "internalCode": "MB-COM-00010",
+        "firstName": "ELIZAMA HERLINDA",
+        "lastName": "BARAHONA MIGUEL",
+        "dni": "42781068",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-010",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 11,
+        "internalCode": "MB-COM-00011",
+        "firstName": "AYRA",
+        "lastName": "BARZOLA BERNUY",
+        "dni": "20093891",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-011",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 12,
+        "internalCode": "MB-COM-00012",
+        "firstName": "SILVIA ROSALÍA",
+        "lastName": "BASTIDAS RAMÍREZ",
+        "dni": "20057738",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-012",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 13,
+        "internalCode": "MB-COM-00013",
+        "firstName": "SILVERIA TOMASA",
+        "lastName": "BONIFACIO CACHUAY",
+        "dni": "16132991",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-013",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 14,
+        "internalCode": "MB-COM-00014",
+        "firstName": "AIDA LILIA",
+        "lastName": "CARLOS TOCAS",
+        "dni": "19845901",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-014",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 15,
+        "internalCode": "MB-COM-00015",
+        "firstName": "EDITH",
+        "lastName": "CARRASCO ROJAS DE TIZA",
+        "dni": "41671307",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-015",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 16,
+        "internalCode": "MB-COM-00016",
+        "firstName": "KIMBERLY PAMELA",
+        "lastName": "CCAPA MALDONADO",
+        "dni": "71740903",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-016",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 17,
+        "internalCode": "MB-COM-00017",
+        "firstName": "MAGALY",
+        "lastName": "CASTILLÓN SIUCE",
+        "dni": "42241717",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-017",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 18,
+        "internalCode": "MB-COM-00018",
+        "firstName": "LESLY EVELYN",
+        "lastName": "CERVANTES CHILENO",
+        "dni": "77805419",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-018",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 19,
+        "internalCode": "MB-COM-00019",
+        "firstName": "YOLANDA RUTH",
+        "lastName": "CHILENO HUAYNALAYA",
+        "dni": "20055678",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-019",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 20,
+        "internalCode": "MB-COM-00020",
+        "firstName": "DONY EVELINA",
+        "lastName": "CHILQUILLO MACHUCA",
+        "dni": "20127656",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-020",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 21,
+        "internalCode": "MB-COM-00021",
+        "firstName": "PRICILIO",
+        "lastName": "CÓNDOR VILLALVA",
+        "dni": "19813214",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-021",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 22,
+        "internalCode": "MB-COM-00022",
+        "firstName": "HEDDY",
+        "lastName": "CONDORÍ SEDANO",
+        "dni": "41027349",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-022",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 23,
+        "internalCode": "MB-COM-00023",
+        "firstName": "LEOGIVILDO",
+        "lastName": "CRISPIN TAYPE",
+        "dni": "45472119",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-023",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 24,
+        "internalCode": "MB-COM-00024",
+        "firstName": "DORCAS ISABEL",
+        "lastName": "CUICAPUSA HUARCAYA",
+        "dni": "20028017",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-024",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 25,
+        "internalCode": "MB-COM-00025",
+        "firstName": "HILDA",
+        "lastName": "CUICAPUSA HUARCAYA",
+        "dni": "20052572",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-025",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 26,
+        "internalCode": "MB-COM-00026",
+        "firstName": "SILVIA HERLINDA",
+        "lastName": "DE LA CRUZ PAMPAS",
+        "dni": "20405583",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-026",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 27,
+        "internalCode": "MB-COM-00027",
+        "firstName": "CLEMENCIA ANA",
+        "lastName": "ESTEBAN LLACSA",
+        "dni": "19836345",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-027",
+        "sectorCode": "SEC-A",
+        "businessCategory": "Carnes y Aves",
+        "observations": null
+    },
+    {
+        "num": 28,
+        "internalCode": "MB-COM-00028",
+        "firstName": "GLORIA ADELA",
+        "lastName": "FLORES VILLAVERDE",
+        "dni": "19995621",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-028",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 29,
+        "internalCode": "MB-COM-00029",
+        "firstName": "LUZ REBECA",
+        "lastName": "GALVÁN VÍLCHEZ",
+        "dni": "20097664",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-029",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 30,
+        "internalCode": "MB-COM-00030",
+        "firstName": "CARMEN MERCEDES",
+        "lastName": "GAMARRA RAMOS",
+        "dni": "19891347",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-030",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 31,
+        "internalCode": "MB-COM-00031",
+        "firstName": "DORIS",
+        "lastName": "GARCIA ACUÑA",
+        "dni": "21271301",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-031",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 32,
+        "internalCode": "MB-COM-00032",
+        "firstName": "MARGATIRA",
+        "lastName": "GARCIA ACUÑA",
+        "dni": "21270275",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-032",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 33,
+        "internalCode": "MB-COM-00033",
+        "firstName": "FREDDY EMERSON",
+        "lastName": "GARCÍA COCA",
+        "dni": "20122038",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-033",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 34,
+        "internalCode": "MB-COM-00034",
+        "firstName": "JULIA",
+        "lastName": "GÓMEZ ROMERO",
+        "dni": "80151899",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-034",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 35,
+        "internalCode": "MB-COM-00035",
+        "firstName": "DOMOLA",
+        "lastName": "GONGORA QUISPE",
+        "dni": "19863262",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-035",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 36,
+        "internalCode": "MB-COM-00036",
+        "firstName": "RAYDA ALEJANDRA",
+        "lastName": "GUTIÉRREZ VDA. DE MENDOZA",
+        "dni": "19802754",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-036",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 37,
+        "internalCode": "MB-COM-00037",
+        "firstName": "AQUILES ANTONIO",
+        "lastName": "HINOSTROZA RUEDA",
+        "dni": "20692805",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-037",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 38,
+        "internalCode": "MB-COM-00038",
+        "firstName": "ELBER",
+        "lastName": "HUAMANÍ MEZA",
+        "dni": "20028524",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-038",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 39,
+        "internalCode": "MB-COM-00039",
+        "firstName": "FELICIANA",
+        "lastName": "HUAMANÍ MEZA",
+        "dni": "20051895",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-039",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 40,
+        "internalCode": "MB-COM-00040",
+        "firstName": "ANA ALIDA",
+        "lastName": "HUARINGA JINES",
+        "dni": "20012197",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-040",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 41,
+        "internalCode": "MB-COM-00041",
+        "firstName": "HEYDDY IRIS",
+        "lastName": "HURTADO ROMERO",
+        "dni": "44889363",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-041",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 42,
+        "internalCode": "MB-COM-00042",
+        "firstName": "MARCELINA",
+        "lastName": "JURADO QUISPE",
+        "dni": "20079126",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-042",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 43,
+        "internalCode": "MB-COM-00043",
+        "firstName": "YOVANA ERNESTINA",
+        "lastName": "LAURA FLORES",
+        "dni": "40350496",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-043",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 44,
+        "internalCode": "MB-COM-00044",
+        "firstName": "MARIBEL FÁTIMA",
+        "lastName": "LAZO REYES",
+        "dni": "19801537",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-044",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 45,
+        "internalCode": "MB-COM-00045",
+        "firstName": "RAUL",
+        "lastName": "LAZO REYES",
+        "dni": "19843280",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-045",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 46,
+        "internalCode": "MB-COM-00046",
+        "firstName": "EUGENIA ENTUSA",
+        "lastName": "LEÓN DE HURTADO",
+        "dni": "21279978",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-046",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 47,
+        "internalCode": "MB-COM-00047",
+        "firstName": "ROGELIO IGNACIO",
+        "lastName": "LÓPEZ HUAMAN",
+        "dni": "19883460",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-047",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 48,
+        "internalCode": "MB-COM-00048",
+        "firstName": "CAMILA",
+        "lastName": "LOZANO TORRES",
+        "dni": "19994775",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-048",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 49,
+        "internalCode": "MB-COM-00049",
+        "firstName": "ELOY MARIANO",
+        "lastName": "LUIS GALLARDO",
+        "dni": "20087969",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-049",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 50,
+        "internalCode": "MB-COM-00050",
+        "firstName": "AUSSY GARDENIA",
+        "lastName": "LUIS MARTICORENA",
+        "dni": "20073695",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-050",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 51,
+        "internalCode": "MB-COM-00051",
+        "firstName": "UDALIA",
+        "lastName": "MARCELO DE CORTEZ",
+        "dni": "19993410",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-051",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 52,
+        "internalCode": "MB-COM-00052",
+        "firstName": "YOHANA MERCEDES",
+        "lastName": "MARTICORENA BENAVENTE",
+        "dni": "20670271",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-052",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 53,
+        "internalCode": "MB-COM-00053",
+        "firstName": "JOSE CARLOS",
+        "lastName": "MATOS MONDARGO",
+        "dni": "48407208",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-053",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 54,
+        "internalCode": "MB-COM-00054",
+        "firstName": "SONIA",
+        "lastName": "MATOS VILLAZANA",
+        "dni": "20042885",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-054",
+        "sectorCode": "SEC-B",
+        "businessCategory": "Frutas y Verduras",
+        "observations": null
+    },
+    {
+        "num": 55,
+        "internalCode": "MB-COM-00055",
+        "firstName": "GABRIELA JHOSELIN",
+        "lastName": "MEDINA ORIHUELA",
+        "dni": "70041842",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-055",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 56,
+        "internalCode": "MB-COM-00056",
+        "firstName": "AYDA",
+        "lastName": "MENDOZA ASTO",
+        "dni": "20047549",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-056",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 57,
+        "internalCode": "MB-COM-00057",
+        "firstName": "CARMEN KARINA",
+        "lastName": "MENDOZA ASTO",
+        "dni": "40061246",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-057",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 58,
+        "internalCode": "MB-COM-00058",
+        "firstName": "MARISOL MAKRINA",
+        "lastName": "MENDOZA BENDEZU",
+        "dni": "40078108",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-058",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 59,
+        "internalCode": "MB-COM-00059",
+        "firstName": "GALINA VICENTA",
+        "lastName": "MEZA SCHWARTZ",
+        "dni": "20040608",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-059",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 60,
+        "internalCode": "MB-COM-00060",
+        "firstName": "TEODOSIA",
+        "lastName": "MOLINA DE GASPAR",
+        "dni": "19881249",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-060",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 61,
+        "internalCode": "MB-COM-00061",
+        "firstName": "ALEJA",
+        "lastName": "MONTES DE ARAUJO",
+        "dni": "19953627",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-061",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 62,
+        "internalCode": "MB-COM-00062",
+        "firstName": "DELIA",
+        "lastName": "MORALES LAZO",
+        "dni": "43777541",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-062",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 63,
+        "internalCode": "MB-COM-00063",
+        "firstName": "OSCAR RAUL",
+        "lastName": "ÑAUPARI CAPCHA",
+        "dni": "20682664",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-063",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 64,
+        "internalCode": "MB-COM-00064",
+        "firstName": "CARLOS YOEL",
+        "lastName": "ÑAUPARI TICSE",
+        "dni": "44512621",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-064",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 65,
+        "internalCode": "MB-COM-00065",
+        "firstName": "BEATRIZ",
+        "lastName": "ORIHUELA DE LAPA",
+        "dni": "20083528",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-065",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 66,
+        "internalCode": "MB-COM-00066",
+        "firstName": "BERTHA LAISA",
+        "lastName": "PEREZ VDA. DE QUISPE",
+        "dni": "19902222",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-066",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 67,
+        "internalCode": "MB-COM-00067",
+        "firstName": "SILVIO",
+        "lastName": "POCOMUCHA HUAROC",
+        "dni": "21246684",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-067",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 68,
+        "internalCode": "MB-COM-00068",
+        "firstName": "OLINDA YOLANDA DONATA",
+        "lastName": "QUINTANA PEÑA",
+        "dni": "19914822",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-068",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 69,
+        "internalCode": "MB-COM-00069",
+        "firstName": "ZENAIDA",
+        "lastName": "QUISPE RETIZ",
+        "dni": "20415566",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-069",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 70,
+        "internalCode": "MB-COM-00070",
+        "firstName": "TEOFILA JUSTA",
+        "lastName": "RAFAEL PECHO",
+        "dni": "19997172",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-070",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 71,
+        "internalCode": "MB-COM-00071",
+        "firstName": "ELSA FEMICIA",
+        "lastName": "RAMÍREZ LÓPEZ",
+        "dni": "20665423",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-071",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 72,
+        "internalCode": "MB-COM-00072",
+        "firstName": "JOSEFINA ALEJANDRA",
+        "lastName": "RAMIREZ RIVERA",
+        "dni": "19968871",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-072",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 73,
+        "internalCode": "MB-COM-00073",
+        "firstName": "JENY",
+        "lastName": "RAMOS CANGAHUALA",
+        "dni": "40707284",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-073",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 74,
+        "internalCode": "MB-COM-00074",
+        "firstName": "AGRIPINA",
+        "lastName": "RAMOS CONDORI",
+        "dni": "23266009",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-074",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 75,
+        "internalCode": "MB-COM-00075",
+        "firstName": "ALEJANDRO",
+        "lastName": "REQUIZ ROBLES",
+        "dni": "20082972",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-075",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 76,
+        "internalCode": "MB-COM-00076",
+        "firstName": "YIYE",
+        "lastName": "REQUIZ SOTO",
+        "dni": "40802806",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-076",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 77,
+        "internalCode": "MB-COM-00077",
+        "firstName": "ANA MARIA",
+        "lastName": "RIOS MERCADO",
+        "dni": "46184653",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-077",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 78,
+        "internalCode": "MB-COM-00078",
+        "firstName": "ELISABETH PRIMITIVA",
+        "lastName": "RODRÍGUEZ GARCÍA",
+        "dni": "20677849",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-078",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 79,
+        "internalCode": "MB-COM-00079",
+        "firstName": "GENOVEVA",
+        "lastName": "ROJAS DE ALVARES",
+        "dni": "20090025",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-079",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 80,
+        "internalCode": "MB-COM-00080",
+        "firstName": "SANTA MARIA",
+        "lastName": "ROJAS HUANAY",
+        "dni": "19889612",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-080",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": null
+    },
+    {
+        "num": 81,
+        "internalCode": "MB-COM-00081",
+        "firstName": "ROBERTO",
+        "lastName": "ROJAS ROSALES",
+        "dni": "20090081",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-081",
+        "sectorCode": "SEC-C",
+        "businessCategory": "Abarrotes y Granos",
+        "observations": "DNI duplicado en documento fuente original (20090025) - verificar con padrón físico"
+    },
+    {
+        "num": 82,
+        "internalCode": "MB-COM-00082",
+        "firstName": "SHULMA SONIA",
+        "lastName": "ROMERO GARCIA",
+        "dni": "40931518",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-082",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 83,
+        "internalCode": "MB-COM-00083",
+        "firstName": "PATRICIA MARINA",
+        "lastName": "ROSALES SOTO",
+        "dni": "40770120",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-083",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 84,
+        "internalCode": "MB-COM-00084",
+        "firstName": "BERTHA ROSA",
+        "lastName": "SANCHEZ VDA. DE PEREZ",
+        "dni": "19850561",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-084",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 85,
+        "internalCode": "MB-COM-00085",
+        "firstName": "HONORATA",
+        "lastName": "SARAVIA DE CONDORÍ",
+        "dni": "19992411",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-085",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 86,
+        "internalCode": "MB-COM-00086",
+        "firstName": "ELENA JUANA",
+        "lastName": "SHUARTS MEZA",
+        "dni": "20083412",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-086",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 87,
+        "internalCode": "MB-COM-00087",
+        "firstName": "MÓNICA AMANDA",
+        "lastName": "SOLÍS SOLÍS",
+        "dni": "20089814",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-087",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 88,
+        "internalCode": "MB-COM-00088",
+        "firstName": "NATALY JANINA",
+        "lastName": "SOLIS ZARATE",
+        "dni": "42780916",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-088",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 89,
+        "internalCode": "MB-COM-00089",
+        "firstName": "JUANA",
+        "lastName": "SOTO DE SIERRALTA",
+        "dni": "19917740",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-089",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 90,
+        "internalCode": "MB-COM-00090",
+        "firstName": "LUZ MATILDE",
+        "lastName": "TICLLACURI HUAMANÍ",
+        "dni": "21269375",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-090",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 91,
+        "internalCode": "MB-COM-00091",
+        "firstName": "PILAR TEOFILA",
+        "lastName": "TRINIDAD ALAVARADO",
+        "dni": "04071342",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-091",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 92,
+        "internalCode": "MB-COM-00092",
+        "firstName": "HERLINDA",
+        "lastName": "URBANO MARTÍNEZ",
+        "dni": "20024426",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-092",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 93,
+        "internalCode": "MB-COM-00093",
+        "firstName": "ALVARO",
+        "lastName": "URBANO VILCHEZ",
+        "dni": "70231168",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-093",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 94,
+        "internalCode": "MB-COM-00094",
+        "firstName": "YOLANDA JUANA",
+        "lastName": "VARGAS LAURENTE",
+        "dni": "20100904",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-094",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 95,
+        "internalCode": "MB-COM-00095",
+        "firstName": "HERMELINDA",
+        "lastName": "VILCHEZ AGUILAR",
+        "dni": "19851711",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-095",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 96,
+        "internalCode": "MB-COM-00096",
+        "firstName": "ROSARIO LÚZ",
+        "lastName": "VILCHEZ PÉREZ",
+        "dni": "20026869",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-096",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 97,
+        "internalCode": "MB-COM-00097",
+        "firstName": "AMELIA CELESTINA",
+        "lastName": "VILLANUEVA FERNANDEZ",
+        "dni": "41012742",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-097",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 98,
+        "internalCode": "MB-COM-00098",
+        "firstName": "EDITH",
+        "lastName": "VILLANUEVA VASQUEZ",
+        "dni": "44732250",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-098",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 99,
+        "internalCode": "MB-COM-00099",
+        "firstName": "TOBÍAS DONATO",
+        "lastName": "YARINGAÑO ESPINOZA",
+        "dni": "20652545",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-099",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 100,
+        "internalCode": "MB-COM-00100",
+        "firstName": "MARCOS",
+        "lastName": "YUPANQUI ROMERO",
+        "dni": "20082323",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-100",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 101,
+        "internalCode": "MB-COM-00101",
+        "firstName": "FERNANDO FREDY",
+        "lastName": "ZUASNABAR CUNYAS",
+        "dni": "41190570",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-101",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 102,
+        "internalCode": "MB-COM-00102",
+        "firstName": "ANA MARIA",
+        "lastName": "ZURITA AMARO",
+        "dni": "20099171",
+        "cond": "SOCIO_REGULAR",
+        "stallCode": "P-102",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 103,
+        "internalCode": "MB-COM-00103",
+        "firstName": "ALEX",
+        "lastName": "ANTONIO GARCIA",
+        "dni": "44426811",
+        "cond": "SOCIO_EN_PRUEBA",
+        "stallCode": "P-103",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 104,
+        "internalCode": "MB-COM-00104",
+        "firstName": "ANGHYELA LIZ",
+        "lastName": "MEJIA IBARRA",
+        "dni": "47657141",
+        "cond": "SOCIO_EN_PRUEBA",
+        "stallCode": "P-104",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 105,
+        "internalCode": "MB-COM-00105",
+        "firstName": "NILDA",
+        "lastName": "PIÑAS ORELLANA",
+        "dni": "45736330",
+        "cond": "SOCIO_EN_PRUEBA",
+        "stallCode": "P-105",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 106,
+        "internalCode": "MB-COM-00106",
+        "firstName": "LILI REBECA",
+        "lastName": "PORTA CASTILLON",
+        "dni": "20037108",
+        "cond": "SOCIO_EN_PRUEBA",
+        "stallCode": "P-106",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    },
+    {
+        "num": 107,
+        "internalCode": "MB-COM-00107",
+        "firstName": "SONIA MARISOL",
+        "lastName": "RIVERA MARQUEZ DE PANEZ",
+        "dni": "20051234",
+        "cond": "SOCIO_EN_PRUEBA",
+        "stallCode": "P-107",
+        "sectorCode": "SEC-D",
+        "businessCategory": "Comidas y Juguería",
+        "observations": null
+    }
+];
 async function main() {
-    console.log('--- SEEDING MERCADO DE ABASTOS MICAELA BASTIDAS ---');
-    // 1. Roles
+    console.log('====================================================');
+    console.log('--- SEEDING OFICIAL: MERCADO DE ABASTOS MICAELA BASTIDAS ---');
+    console.log('====================================================');
+    // 0. LIMPIEZA PREVIA COMPLETA DE LA BASE DE DATOS
+    console.log('--> Limpiando base de datos previa...');
+    try {
+        await prisma.faenaAttendance.deleteMany();
+        await prisma.faena.deleteMany();
+        await prisma.attendanceEvent.deleteMany();
+        await prisma.meeting.deleteMany();
+        await prisma.advertisement.deleteMany();
+        await prisma.marketDocument.deleteMany();
+        await prisma.loanCollection.deleteMany();
+        await prisma.loan.deleteMany();
+        await prisma.ticket.deleteMany();
+        await prisma.sanitaryEntryTicket.deleteMany();
+        await prisma.sanitaryServiceSession.deleteMany();
+        await prisma.staffPayment.deleteMany();
+        await prisma.staffMember.deleteMany();
+        await prisma.camera.deleteMany();
+        await prisma.auditLog.deleteMany();
+        await prisma.cashMovement.deleteMany();
+        await prisma.payment.deleteMany();
+        await prisma.paymentObligation.deleteMany();
+        await prisma.merchant.deleteMany();
+        await prisma.marketStall.deleteMany();
+        await prisma.sector.deleteMany();
+        await prisma.rate.deleteMany();
+        await prisma.paymentConcept.deleteMany();
+        await prisma.userRole.deleteMany();
+        await prisma.role.deleteMany();
+        await prisma.syncOperation.deleteMany();
+        await prisma.syncBatch.deleteMany();
+        await prisma.device.deleteMany();
+        await prisma.cashRegister.deleteMany();
+        await prisma.user.deleteMany();
+        await prisma.businessCategory.deleteMany();
+        await prisma.merchantType.deleteMany();
+        console.log('✓ Base de datos vaciada con éxito (estado limpio)');
+    }
+    catch (err) {
+        console.warn('Advertencia durante limpieza previa:', err.message);
+    }
+    // 1. Roles del Sistema
     const roles = [
-        { name: client_1.RoleType.ADMINISTRADOR, description: 'Acceso total al sistema y configuraciones' },
-        { name: client_1.RoleType.TESORERA, description: 'Gestión de padrón, cobros, caja y arqueos' },
+        { name: client_1.RoleType.ADMINISTRADOR, description: 'Acceso total al sistema, padrón y configuraciones' },
+        { name: client_1.RoleType.TESORERA, description: 'Gestión de padrón, cobros, caja y rendiciones' },
         { name: client_1.RoleType.SERVICIOS_HIGIENICOS, description: 'Operación de turnos de servicios y control de tickets' },
         { name: client_1.RoleType.CONSULTA, description: 'Visualización de reportes e informes sin permisos de edición' },
     ];
@@ -21,7 +1350,7 @@ async function main() {
         });
     }
     console.log('✓ Roles creados');
-    // 2. Users
+    // 2. Usuarios del Sistema con Credenciales Seguras
     const passwordHash = await bcrypt.hash('Micaela2026!', 10);
     const users = [
         {
@@ -81,10 +1410,11 @@ async function main() {
             },
         });
     }
-    console.log('✓ Usuarios y asignación de roles completados');
-    // 3. Merchant Types
+    console.log('✓ Usuarios de gestión creados (admin, tesorera, sshh_operador, consulta)');
+    // 3. Tipos de Comerciantes Oficiales
     const merchantTypes = [
-        { code: client_1.MerchantTypeEnum.SOCIO, name: 'Socio Titular', description: 'Comerciante titular socio del mercado con puesto asignado' },
+        { code: client_1.MerchantTypeEnum.SOCIO, name: 'Socio Titular', description: 'Comerciante socio del mercado con derecho estatutario y puesto asignado' },
+        { code: client_1.MerchantTypeEnum.INQUILINO, name: 'Inquilino', description: 'Arrendatario de puesto comercial o módulo del mercado' },
         { code: client_1.MerchantTypeEnum.AMBULANTE_FIJO, name: 'Ambulante Fijo', description: 'Comerciante con espacio regular asignado en pasajes autorizados' },
         { code: client_1.MerchantTypeEnum.AMBULANTE_TEMPORAL, name: 'Ambulante Temporal', description: 'Comerciante rotativo o de días de feria' },
     ];
@@ -96,12 +1426,33 @@ async function main() {
             create: mt,
         });
     }
-    // 4. Sectors
+    console.log('✓ Tipos de comerciantes configurados (Socio, Inquilino, Ambulante Fijo, Temporal)');
+    // 4. Giros y Rubros Comerciales
+    const categoriesList = [
+        'Carnes y Aves',
+        'Frutas y Verduras',
+        'Abarrotes y Granos',
+        'Comidas y Juguería',
+        'Flores y Plantas',
+        'Bolsas y Plásticos',
+        'Hierbas y Especias',
+        'Ropa y Calzado',
+        'Comercio General',
+    ];
+    for (const catName of categoriesList) {
+        await prisma.businessCategory.upsert({
+            where: { name: catName },
+            update: {},
+            create: { name: catName },
+        });
+    }
+    console.log('✓ Categorías de giros comerciales creadas');
+    // 5. Sectores del Mercado
     const sectors = [
         { code: 'SEC-A', name: 'Sector Carnes y Pescados', description: 'Pabellón A: Venta de carnes rojas, aves y pescados' },
-        { code: 'SEC-B', name: 'Sector Frutas y Verduras', description: 'Pabellón B: Frutas frescas y hortalizas' },
+        { code: 'SEC-B', name: 'Sector Frutas y Verduras', description: 'Pabellón B: Frutas frescas, hortalizas y tubérculos' },
         { code: 'SEC-C', name: 'Sector Abarrotes y Granos', description: 'Pabellón C: Víveres, lácteos y productos secos' },
-        { code: 'SEC-D', name: 'Sector Comidas y Jugos', description: 'Pabellón D: Puestos de comida preparada' },
+        { code: 'SEC-D', name: 'Sector Comidas y Jugos', description: 'Pabellón D: Puestos de comida preparada y juguerías' },
         { code: 'SEC-AMB', name: 'Zona Ambulatoria Externa', description: 'Pasajes perimétricos y explanada exterior' },
     ];
     const createdSectors = {};
@@ -112,39 +1463,67 @@ async function main() {
             create: s,
         });
     }
-    // 5. Market Stalls
-    const stallsData = [
-        { code: 'P-A01', sector: 'SEC-A', locationDescription: 'Frente al ingreso principal pasaje A' },
-        { code: 'P-A02', sector: 'SEC-A', locationDescription: 'Pasaje A puesto 2' },
-        { code: 'P-A03', sector: 'SEC-A', locationDescription: 'Pasaje A puesto 3' },
-        { code: 'P-B01', sector: 'SEC-B', locationDescription: 'Pasaje central verduras puesto 1' },
-        { code: 'P-B02', sector: 'SEC-B', locationDescription: 'Pasaje central verduras puesto 2' },
-        { code: 'P-B03', sector: 'SEC-B', locationDescription: 'Pasaje central frutas puesto 3' },
-        { code: 'P-C01', sector: 'SEC-C', locationDescription: 'Pasaje abarrotes tienda 1' },
-        { code: 'P-C02', sector: 'SEC-C', locationDescription: 'Pasaje abarrotes tienda 2' },
-        { code: 'P-D01', sector: 'SEC-D', locationDescription: 'Módulo de comida 1' },
-        { code: 'P-D02', sector: 'SEC-D', locationDescription: 'Módulo de juguería 2' },
-    ];
+    console.log('✓ Sectores del mercado configurados');
+    // 6. Puestos de Mercado (P-001 a P-120)
     const createdStalls = {};
-    for (const st of stallsData) {
-        createdStalls[st.code] = await prisma.marketStall.upsert({
-            where: { code: st.code },
-            update: {},
+    for (let i = 1; i <= 120; i++) {
+        const stallCode = 'P-' + String(i).padStart(3, '0');
+        let sectorCode = 'SEC-A';
+        let desc = 'Pabellón A - Carnes y Aves';
+        let stallNumber = i;
+        if (i > 27 && i <= 54) {
+            sectorCode = 'SEC-B';
+            desc = 'Pabellón B - Frutas y Verduras';
+            stallNumber = i - 27;
+        }
+        else if (i > 54 && i <= 81) {
+            sectorCode = 'SEC-C';
+            desc = 'Pabellón C - Abarrotes y Granos';
+            stallNumber = i - 54;
+        }
+        else if (i > 81 && i <= 107) {
+            sectorCode = 'SEC-D';
+            desc = 'Pabellón D - Comidas y Jugos';
+            stallNumber = i - 81;
+        }
+        else if (i > 107) {
+            sectorCode = 'SEC-AMB';
+            desc = 'Módulo Disponible para Nuevos Comerciantes / Inquilinos';
+            stallNumber = i - 107;
+        }
+        createdStalls[stallCode] = await prisma.marketStall.upsert({
+            where: { code: stallCode },
+            update: {
+                giro: createdSectors[sectorCode].name,
+                stallNumber,
+            },
             create: {
-                code: st.code,
-                sectorId: createdSectors[st.sector].id,
-                locationDescription: st.locationDescription,
-                status: client_1.StallStatus.OCUPADO,
+                code: stallCode,
+                sectorId: createdSectors[sectorCode].id,
+                giro: createdSectors[sectorCode].name,
+                stallNumber,
+                locationDescription: desc,
+                status: i <= 107 ? client_1.StallStatus.OCUPADO : client_1.StallStatus.LIBRE,
             },
         });
     }
-    console.log('✓ Sectores y Puestos creados');
-    // 6. Payment Concepts
+    console.log('✓ 120 puestos creados (P-001 al P-120)');
+    // 7. Conceptos de Cobranza Oficiales
     const concepts = [
-        { code: 'ALCABALA', name: 'Alcabala / Derecho de Puesto', periodicity: client_1.Periodicity.MENSUAL, description: 'Cuota de mantenimiento y ocupación del puesto o espacio' },
-        { code: 'AGUA', name: 'Servicio de Agua Potable', periodicity: client_1.Periodicity.MENSUAL, description: 'Consumo y mantenimiento de redes sanitarias de agua' },
+        { code: 'ALCABALA', name: 'Alcabala / Derecho de Puesto', periodicity: client_1.Periodicity.MENSUAL, description: 'Cuota de mantenimiento y ocupación del puesto' },
+        { code: 'AGUA', name: 'Servicio de Agua Potable', periodicity: client_1.Periodicity.MENSUAL, description: 'Consumo y mantenimiento de redes sanitarias' },
+        { code: 'ALQUILER_INQUILINO', name: 'Alquiler de Puesto (Inquilinos)', periodicity: client_1.Periodicity.MENSUAL, description: 'Canon de arrendamiento para inquilinos del mercado' },
+        { code: 'AGUA_INQUILINO', name: 'Agua Potable Inquilinos', periodicity: client_1.Periodicity.MENSUAL, description: 'Consumo de agua para puestos de inquilinos' },
+        { code: 'TICKET_AMBULANTE_1', name: 'Ticket Ambulante S/ 1.00', periodicity: client_1.Periodicity.DIARIO, description: 'Tarifa básica para ambulantes de paso con canasta' },
+        { code: 'TICKET_AMBULANTE_2', name: 'Ticket Ambulante S/ 2.00', periodicity: client_1.Periodicity.DIARIO, description: 'Tarifa intermedia para ambulantes con carretilla' },
+        { code: 'TICKET_AMBULANTE_3', name: 'Ticket Ambulante S/ 3.00', periodicity: client_1.Periodicity.DIARIO, description: 'Tarifa completa para ambulantes con puesto temporal' },
         { code: 'MICCIONARIO', name: 'Uso de Miccionario', periodicity: client_1.Periodicity.POR_USO, description: 'Uso de urinario en servicios higiénicos' },
         { code: 'RETRETE', name: 'Uso de Retrete', periodicity: client_1.Periodicity.POR_USO, description: 'Uso de inodoro/retrete en servicios higiénicos' },
+        { code: 'MULTA_FAENA', name: 'Multa por Inasistencia a Faena', periodicity: client_1.Periodicity.POR_USO, description: 'Sanción económica por no participar en la faena de limpieza' },
+        { code: 'MULTA_ASAMBLEA', name: 'Multa por Inasistencia a Asamblea', periodicity: client_1.Periodicity.POR_USO, description: 'Sanción económica por inasistencia no justificada a asamblea general' },
+        { code: 'PUBLICIDAD_PERIFONEO', name: 'Publicidad por Perifoneo', periodicity: client_1.Periodicity.DIARIO, description: 'Emisión de spots de audio en altavoces del mercado' },
+        { code: 'PUBLICIDAD_BANNER', name: 'Publicidad Banners y Carteles', periodicity: client_1.Periodicity.MENSUAL, description: 'Exhibición publicitaria en pasajes y muros del mercado' },
+        { code: 'FONDO_ROTATORIO_COBRANZA', name: 'Recuperación Fondo Rotatorio', periodicity: client_1.Periodicity.POR_USO, description: 'Cobranza y amortización de préstamos a comerciantes' },
     ];
     const createdConcepts = {};
     for (const c of concepts) {
@@ -154,18 +1533,19 @@ async function main() {
             create: c,
         });
     }
-    // 7. Rates
+    // 8. Tarifas Vigentes
     const ratesData = [
-        // Alcabala
         { concept: 'ALCABALA', type: client_1.MerchantTypeEnum.SOCIO, amount: 10.00 },
         { concept: 'ALCABALA', type: client_1.MerchantTypeEnum.AMBULANTE_FIJO, amount: 3.00 },
-        { concept: 'ALCABALA', type: client_1.MerchantTypeEnum.AMBULANTE_TEMPORAL, amount: 3.00 },
-        // Agua
+        { concept: 'ALCABALA', type: client_1.MerchantTypeEnum.AMBULANTE_TEMPORAL, amount: 4.00 },
         { concept: 'AGUA', type: client_1.MerchantTypeEnum.SOCIO, amount: 6.00 },
         { concept: 'AGUA', type: client_1.MerchantTypeEnum.AMBULANTE_FIJO, amount: 3.00 },
-        // SSHH
+        { concept: 'ALQUILER_INQUILINO', type: client_1.MerchantTypeEnum.INQUILINO, amount: 150.00 },
+        { concept: 'AGUA_INQUILINO', type: client_1.MerchantTypeEnum.INQUILINO, amount: 10.00 },
         { concept: 'MICCIONARIO', type: null, amount: 0.50 },
         { concept: 'RETRETE', type: null, amount: 1.00 },
+        { concept: 'MULTA_ASAMBLEA', type: client_1.MerchantTypeEnum.SOCIO, amount: 50.00 },
+        { concept: 'MULTA_FAENA', type: client_1.MerchantTypeEnum.SOCIO, amount: 30.00 },
     ];
     for (const r of ratesData) {
         const conceptId = createdConcepts[r.concept].id;
@@ -190,135 +1570,125 @@ async function main() {
             });
         }
     }
-    console.log('✓ Conceptos y Tarifas configuradas');
-    // 8. Merchants
-    const merchantsData = [
+    console.log('✓ Conceptos de cobro y tarifas configuradas');
+    // 8.1 Categorías Oficiales de Gestión Documental
+    const docCategories = [
+        { code: 'CARTA_RECIBIDA', name: 'Cartas Recibidas', direction: 'RECIBIDO', description: 'Comunicaciones y cartas ingresadas por socios, vecinos o entidades' },
+        { code: 'CARTA_ENVIADA', name: 'Cartas Enviadas', direction: 'ENVIADO', description: 'Cartas oficiales emitidas por la Junta Directiva' },
+        { code: 'SOLICITUD', name: 'Solicitudes', direction: 'RECIBIDO', description: 'Peticiones formales de socios, comerciantes o terceros' },
+        { code: 'OFICIO', name: 'Oficios y Comunicaciones', direction: 'ENVIADO', description: 'Oficios dirigidos a la Municipalidad, Policía, Bomberos, etc.' },
+        { code: 'MEMORANDUM', name: 'Memorándum', direction: 'INTERNO', description: 'Comunicaciones internas de cumplimiento obligatorio' },
+        { code: 'CONTRATO', name: 'Contratos y Convenios', direction: 'INTERNO', description: 'Contratos de alquiler de puestos, servicios y acuerdos' },
+        { code: 'CONSTANCIA', name: 'Constancias y Certificados', direction: 'ENVIADO', description: 'Constancias de socio, no adeudo, trabajo y posesión' },
+        { code: 'RESOLUCION', name: 'Resoluciones Directivas', direction: 'INTERNO', description: 'Acuerdos formales tomados en sesiones de Consejo Directivo' },
+        { code: 'INFORME', name: 'Informes de Gestión y Balances', direction: 'INTERNO', description: 'Informes contables, financieros y comisiones' },
+        { code: 'OTROS', name: 'Otros Documentos Oficiales', direction: 'INTERNO', description: 'Archivos generales del archivo institucional' },
+    ];
+    for (const dc of docCategories) {
+        await prisma.documentCategory.upsert({
+            where: { code: dc.code },
+            update: {},
+            create: dc,
+        });
+    }
+    console.log('✓ Categorías de Gestión Documental configuradas');
+    // 8.2 Conceptos de Gestión Documental
+    const docConcepts = [
+        { code: 'ASAMBLEA', name: 'Asambleas Generales', description: 'Convocatorias, padrones y actas de asambleas ordinarias y extraordinarias' },
+        { code: 'FAENA', name: 'Faenas de Limpieza', description: 'Campañas comunales de limpieza, fumigación y desinfección' },
+        { code: 'LEGAL', name: 'Asuntos Legales y Notariales', description: 'Trámites en Registros Públicos (SUNARP), notarías y juzgados' },
+        { code: 'MUNICIPAL', name: 'Gestión Municipal', description: 'Licencias de funcionamiento, defensa civil (ITSE) y arbitrios' },
+        { code: 'SUNAT', name: 'Tributación SUNAT', description: 'Declaraciones, RUC, libros contables y tributos' },
+        { code: 'SERVICIOS_PUBLICOS', name: 'Servicios Básicos (Agua y Luz)', description: 'Gestiones ante Sedam Huancayo y Electrocentro' },
+        { code: 'INFRAESTRUCTURA', name: 'Obras y Mantenimiento', description: 'Proyectos de techado, pisos, electrificación y seguridad' },
+        { code: 'PADRON_SOCIOS', name: 'Padrón y Membresía', description: 'Expedientes de admisión, transferencias y bajas de socios' },
+    ];
+    for (const c of docConcepts) {
+        await prisma.documentConcept.upsert({
+            where: { code: c.code },
+            update: {},
+            create: c,
+        });
+    }
+    console.log('✓ Conceptos de Gestión Documental configurados');
+    // 8.3 Guiones Publicitarios Pre-escritos
+    const defaultScripts = [
         {
-            internalCode: 'MB-COM-00001',
-            firstName: 'Juan',
-            lastName: 'Pérez Mamani',
-            dni: '45891234',
-            phone: '951753951',
-            type: client_1.MerchantTypeEnum.SOCIO,
-            stallCode: 'P-A01',
-            sectorCode: 'SEC-A',
-            businessCategory: 'Carnes de Res y Cerdo',
+            title: 'Citación a Asamblea General Ordinaria',
+            category: 'ASAMBLEA',
+            estimatedDurationSeconds: 35,
+            content: '¡Atención comerciantes y socios del Mercado Micaela Bastidas! Por encargo de la Junta Directiva, se cita a todos los socios a la próxima ASAMBLEA GENERAL ORDINARIA a realizarse el día [FECHA] a horas [HORA] en el patio central del mercado. Agenda: Balance económico y proyectos de techado. Se recuerda que la asistencia es obligatoria y se aplicará la multa de ley a los inasistentes. ¡Puntualidad es respeto!',
         },
         {
-            internalCode: 'MB-COM-00002',
-            firstName: 'Rosa',
-            lastName: 'Gutiérrez Salazar',
-            dni: '41235678',
-            phone: '987321654',
-            type: client_1.MerchantTypeEnum.SOCIO,
-            stallCode: 'P-A02',
-            sectorCode: 'SEC-A',
-            businessCategory: 'Pollería y Aves',
+            title: 'Convocatoria a Faena Comunal de Limpieza',
+            category: 'FAENA',
+            estimatedDurationSeconds: 30,
+            content: '¡Aviso importante de salubridad! Se comunica a todos los comerciantes de los sectores Carnes, Frutas, Abarrotes y Comidas que este [DÍA] desde las [HORA] realizaremos la GRAN FAENA DE LIMPIEZA Y DESINFECCIÓN GENERAL de nuestros pasajes. Traer escobillones, detergente y baldes de agua. Evitemos multas y mantengamos limpio nuestro mercado.',
         },
         {
-            internalCode: 'MB-COM-00003',
-            firstName: 'Pedro',
-            lastName: 'Flores Condori',
-            dni: '47852369',
-            phone: '945612378',
-            type: client_1.MerchantTypeEnum.SOCIO,
-            stallCode: 'P-B01',
-            sectorCode: 'SEC-B',
-            businessCategory: 'Verduras y Tubérculos',
+            title: 'Comunicado de Pago de Cuotas Mensuales',
+            category: 'AVISO_COBRANZA',
+            estimatedDurationSeconds: 25,
+            content: 'Estimados socios e inquilinos, la Tesorería del mercado les recuerda que ya se encuentran al cobro las cuotas del mes correspondiente a Alcabala de puesto y Servicio de Agua. Acérquense a la oficina de administración de 8:00 AM a 2:00 PM para evitar recargos o corte de servicios.',
         },
         {
-            internalCode: 'MB-COM-00004',
-            firstName: 'Ana',
-            lastName: 'Torres Quispe',
-            dni: '43698521',
-            phone: '978456123',
-            type: client_1.MerchantTypeEnum.SOCIO,
-            stallCode: 'P-B02',
-            sectorCode: 'SEC-B',
-            businessCategory: 'Frutas de Estación',
+            title: 'Promoción Comercial de Puesto de Comidas y Jugos',
+            category: 'PROMOCION_SOCIO',
+            estimatedDurationSeconds: 25,
+            content: '¡Para todos nuestros caseros y caseras! Visiten el pabellón de Comidas del Mercado Micaela Bastidas. Hoy exquisitos menús criollos, caldos de gallina y jugos naturales preparados al instante con total higiene y al mejor precio de la ciudad. ¡Los esperamos!',
         },
         {
-            internalCode: 'MB-COM-00005',
-            firstName: 'Manuel',
-            lastName: 'Castillo Vega',
-            dni: '46321458',
-            phone: '912345678',
-            type: client_1.MerchantTypeEnum.SOCIO,
-            stallCode: 'P-C01',
-            sectorCode: 'SEC-C',
-            businessCategory: 'Abarrotes en General',
-        },
-        {
-            internalCode: 'MB-COM-00006',
-            firstName: 'Doris',
-            lastName: 'Mendoza Luque',
-            dni: '49874512',
-            phone: '998877665',
-            type: client_1.MerchantTypeEnum.AMBULANTE_FIJO,
-            stallCode: null,
-            sectorCode: 'SEC-AMB',
-            businessCategory: 'Hierbas y Especias',
-        },
-        {
-            internalCode: 'MB-COM-00007',
-            firstName: 'Segundo',
-            lastName: 'Villanueva Díaz',
-            dni: '42145698',
-            phone: '965412389',
-            type: client_1.MerchantTypeEnum.AMBULANTE_FIJO,
-            stallCode: null,
-            sectorCode: 'SEC-AMB',
-            businessCategory: 'Bolsas y Plásticos',
-        },
-        {
-            internalCode: 'MB-COM-00008',
-            firstName: 'Gladys',
-            lastName: 'Chávez Espinoza',
-            dni: '48751236',
-            phone: '932145698',
-            type: client_1.MerchantTypeEnum.AMBULANTE_TEMPORAL,
-            stallCode: null,
-            sectorCode: 'SEC-AMB',
-            businessCategory: 'Flores y Plantas',
+            title: 'Aviso de Seguridad y Cuidado de Pertenencias',
+            category: 'COMUNICADO_GENERAL',
+            estimatedDurationSeconds: 25,
+            content: 'A todo el público consumidor y comerciantes: Por su seguridad, mantengan a la vista sus bolsos, billeteras y celulares en las zonas de mayor tránsito. Nuestro mercado cuenta con sistema de videovigilancia CCTV en todos los pabellones. ¡Juntos cuidamos nuestro mercado!',
         },
     ];
+    for (const s of defaultScripts) {
+        const existingScript = await prisma.advertisingScript.findFirst({ where: { title: s.title } });
+        if (!existingScript) {
+            await prisma.advertisingScript.create({ data: s });
+        }
+    }
+    console.log('✓ Guiones publicitarios pre-escritos configurados');
+    // 9. CARGA DE LOS 107 SOCIOS OFICIALES DEL MERCADO MICAELA BASTIDAS
+    console.log('--> Insertando 107 socios oficiales ordenados alfabéticamente...');
     const createdMerchants = {};
-    for (const m of merchantsData) {
-        const stallId = m.stallCode ? createdStalls[m.stallCode].id : null;
+    for (const m of officialSociosData) {
+        const stall = createdStalls[m.stallCode];
         const merchant = await prisma.merchant.upsert({
             where: { dni: m.dni },
-            update: {},
+            update: {
+                firstName: m.firstName,
+                lastName: m.lastName,
+                memberCondition: m.cond,
+                stallId: stall?.id,
+                businessCategory: m.businessCategory,
+                observations: m.observations,
+            },
             create: {
                 internalCode: m.internalCode,
-                qrCode: 'MB-QR-' + m.internalCode,
+                qrCode: 'MB-QR-' + m.dni,
                 firstName: m.firstName,
                 lastName: m.lastName,
                 dni: m.dni,
-                phone: m.phone,
-                merchantTypeId: createdTypes[m.type].id,
+                merchantTypeId: createdTypes['SOCIO'].id,
+                memberCondition: m.cond,
                 sectorId: createdSectors[m.sectorCode].id,
-                stallId: stallId,
+                stallId: stall?.id,
                 businessCategory: m.businessCategory,
                 status: client_1.MerchantStatus.ACTIVO,
+                observations: m.observations,
             },
         });
         createdMerchants[m.internalCode] = merchant;
-        if (stallId) {
-            await prisma.marketStall.update({
-                where: { id: stallId },
-                data: {
-                    status: client_1.StallStatus.OCUPADO,
-                    assignedAt: new Date(),
-                },
-            });
-        }
     }
-    console.log('✓ Comerciantes registrados y puestos asignados');
-    // 9. Caja inicial de Tesorería (Abierta para hoy)
+    console.log('✓ 107 socios oficiales registrados con credenciales QR y puestos asignados');
+    // 10. Caja inicial de Tesorería (Abierta para hoy)
     const tesoreraUser = createdUsers['tesorera'];
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
-    const cashRegister = await prisma.cashRegister.create({
+    await prisma.cashRegister.create({
         data: {
             name: `Caja Principal Tesorería - ${todayStr}`,
             openedById: tesoreraUser.id,
@@ -327,248 +1697,67 @@ async function main() {
             status: client_1.CashRegisterStatus.ABIERTO,
         },
     });
-    // 10. Payment Obligations for Current Month (2026-09)
+    console.log('✓ Caja principal de tesorería aperturada con S/ 150.00');
+    // 11. Generación de Cuotas Mensuales del Período Actual (2026-09)
     const currentPeriod = '2026-09';
     const dueDate = new Date('2026-09-30T23:59:59');
-    for (const m of merchantsData) {
+    console.log('--> Generando obligaciones mensuales (Alcabala y Agua) para los 107 socios...');
+    for (const m of officialSociosData) {
         const merchant = createdMerchants[m.internalCode];
-        if (m.type === client_1.MerchantTypeEnum.SOCIO) {
-            // Alcabala S/ 10
-            await prisma.paymentObligation.upsert({
-                where: {
-                    merchantId_conceptId_period: {
-                        merchantId: merchant.id,
-                        conceptId: createdConcepts['ALCABALA'].id,
-                        period: currentPeriod,
-                    },
-                },
-                update: {},
-                create: {
+        // Alcabala S/ 10.00
+        await prisma.paymentObligation.upsert({
+            where: {
+                merchantId_conceptId_period: {
                     merchantId: merchant.id,
                     conceptId: createdConcepts['ALCABALA'].id,
                     period: currentPeriod,
-                    year: 2026,
-                    month: 9,
-                    dueDate,
-                    amount: 10.00,
-                    status: client_1.ObligationStatus.PENDIENTE,
                 },
-            });
-            // Agua S/ 6
-            await prisma.paymentObligation.upsert({
-                where: {
-                    merchantId_conceptId_period: {
-                        merchantId: merchant.id,
-                        conceptId: createdConcepts['AGUA'].id,
-                        period: currentPeriod,
-                    },
-                },
-                update: {},
-                create: {
-                    merchantId: merchant.id,
-                    conceptId: createdConcepts['AGUA'].id,
-                    period: currentPeriod,
-                    year: 2026,
-                    month: 9,
-                    dueDate,
-                    amount: 6.00,
-                    status: client_1.ObligationStatus.PENDIENTE,
-                },
-            });
-        }
-        else if (m.type === client_1.MerchantTypeEnum.AMBULANTE_FIJO) {
-            // Agua mensual ambulante S/ 3
-            await prisma.paymentObligation.upsert({
-                where: {
-                    merchantId_conceptId_period: {
-                        merchantId: merchant.id,
-                        conceptId: createdConcepts['AGUA'].id,
-                        period: currentPeriod,
-                    },
-                },
-                update: {},
-                create: {
-                    merchantId: merchant.id,
-                    conceptId: createdConcepts['AGUA'].id,
-                    period: currentPeriod,
-                    year: 2026,
-                    month: 9,
-                    dueDate,
-                    amount: 3.00,
-                    status: client_1.ObligationStatus.PENDIENTE,
-                },
-            });
-        }
-    }
-    console.log('✓ Obligaciones de pago mensuales generadas');
-    // 11. Registrar algunos pagos de ejemplo (Juan Pérez pagó Alcabala y Agua)
-    const juanPerez = createdMerchants['MB-COM-00001'];
-    const alcabalaObligationJuan = await prisma.paymentObligation.findUnique({
-        where: {
-            merchantId_conceptId_period: {
-                merchantId: juanPerez.id,
-                conceptId: createdConcepts['ALCABALA'].id,
-                period: currentPeriod,
             },
-        },
-    });
-    if (alcabalaObligationJuan) {
-        const payment = await prisma.payment.create({
-            data: {
-                operationNumber: 'MB-20260904-00001',
-                merchantId: juanPerez.id,
-                conceptId: createdConcepts['ALCABALA'].id,
-                obligationId: alcabalaObligationJuan.id,
-                amount: 10.00,
-                period: currentPeriod,
-                paymentMethod: client_1.PaymentMethod.EFECTIVO,
-                cashRegisterId: cashRegister.id,
-                collectedById: tesoreraUser.id,
-                notes: 'Pago puntual Alcabala Septiembre',
-            },
-        });
-        await prisma.paymentObligation.update({
-            where: { id: alcabalaObligationJuan.id },
-            data: {
-                status: client_1.ObligationStatus.PAGADO,
-                paidAt: new Date(),
-            },
-        });
-    }
-    // 12. Sesión de Servicios Higiénicos de prueba
-    const sshhUser = createdUsers['sshh_operador'];
-    const session = await prisma.sanitaryServiceSession.create({
-        data: {
-            operatorId: sshhUser.id,
-            cashRegisterId: cashRegister.id,
-            startTime: new Date(today.setHours(6, 0, 0, 0)),
-            urinalCount: 30, // 30 x 0.50 = 15.00
-            urinalPrice: 0.50,
-            urinalTotal: 15.00,
-            toiletCount: 45, // 45 x 1.00 = 45.00
-            toiletPrice: 1.00,
-            toiletTotal: 45.00,
-            totalCollected: 60.00,
-            initialTicketNumber: 501,
-            finalTicketNumber: 575,
-            declaredTicketCount: 75,
-            calculatedTicketCount: 75,
-            ticketDiscrepancy: 0,
-            status: client_1.SessionStatus.ABIERTO,
-            notes: 'Turno mañana sin incidentes',
-        },
-    });
-    await prisma.ticket.create({
-        data: {
-            sessionId: session.id,
-            startNumber: 501,
-            endNumber: 575,
-            totalIssued: 75,
-            unitPrice: 1.00,
-            totalAmount: 60.00,
-            status: client_1.TicketStatus.VERIFICADO,
-        },
-    });
-    console.log('✓ Sesión y control de tickets de servicios higiénicos inicializada');
-    // 13. System Settings
-    const settings = [
-        { key: 'MARKET_NAME', value: 'Mercado de Abastos Micaela Bastidas', description: 'Nombre oficial de la institución' },
-        { key: 'CURRENCY', value: 'PEN', description: 'Moneda oficial (Soles)' },
-        { key: 'ALLOW_PARTIAL_PAYMENTS', value: 'false', description: 'Permitir pagos fraccionados' },
-        { key: 'REQUIRE_TICKET_VALIDATION', value: 'true', description: 'Exigir validación de tickets en turnos SSHH' },
-    ];
-    for (const s of settings) {
-        await prisma.systemSetting.upsert({
-            where: { key: s.key },
             update: {},
-            create: s,
+            create: {
+                merchantId: merchant.id,
+                conceptId: createdConcepts['ALCABALA'].id,
+                period: currentPeriod,
+                year: 2026,
+                month: 9,
+                dueDate,
+                amount: 10.00,
+                status: client_1.ObligationStatus.PENDIENTE,
+            },
+        });
+        // Agua S/ 6.00
+        await prisma.paymentObligation.upsert({
+            where: {
+                merchantId_conceptId_period: {
+                    merchantId: merchant.id,
+                    conceptId: createdConcepts['AGUA'].id,
+                    period: currentPeriod,
+                },
+            },
+            update: {},
+            create: {
+                merchantId: merchant.id,
+                conceptId: createdConcepts['AGUA'].id,
+                period: currentPeriod,
+                year: 2026,
+                month: 9,
+                dueDate,
+                amount: 6.00,
+                status: client_1.ObligationStatus.PENDIENTE,
+            },
         });
     }
-    console.log('✓ Configuraciones del sistema guardadas');
-    // 14. Dispositivos Autorizados (Móviles)
-    const tesoreraDev = await prisma.device.upsert({
-        where: { deviceId: 'DEV-ANDROID-TESORERIA-01' },
-        update: {},
-        create: {
-            deviceId: 'DEV-ANDROID-TESORERIA-01',
-            name: 'Tablet Samsung Galaxy - Tesorería',
-            userId: tesoreraUser.id,
-            os: 'Android 14',
-            appVersion: '1.2.0',
-            lastSyncAt: new Date(),
-        },
-    });
-    const sshhDev = await prisma.device.upsert({
-        where: { deviceId: 'DEV-ANDROID-SSHH-01' },
-        update: {},
-        create: {
-            deviceId: 'DEV-ANDROID-SSHH-01',
-            name: 'Móvil Android - Operador SSHH',
-            userId: createdUsers['sshh_operador'].id,
-            os: 'Android 13',
-            appVersion: '1.2.0',
-            lastSyncAt: new Date(),
-        },
-    });
-    console.log('✓ Dispositivos móviles registrados');
-    // 15. Reuniones y Asistencia
-    const meeting = await prisma.meeting.upsert({
-        where: { id: 'meeting-asamblea-sep-2026' },
-        update: {},
-        create: {
-            id: 'meeting-asamblea-sep-2026',
-            title: 'Asamblea General Ordinaria de Socios - Septiembre 2026',
-            date: new Date('2026-09-04'),
-            time: '18:00',
-            location: 'Auditorio Central del Mercado',
-            description: 'Aprobación de balances, informe de recaudación y mantenimiento de techos',
-            status: 'EN_CURSO',
-            createdById: createdUsers['admin'].id,
-        },
-    });
-    // Asistencias iniciales de Juan Pérez y Rosa Gutiérrez
-    await prisma.attendanceEvent.upsert({
-        where: {
-            meetingId_merchantId: {
-                meetingId: meeting.id,
-                merchantId: createdMerchants['MB-COM-00001'].id,
-            },
-        },
-        update: {},
-        create: {
-            meetingId: meeting.id,
-            merchantId: createdMerchants['MB-COM-00001'].id,
-            dni: '45891234',
-            deviceId: tesoreraDev.deviceId,
-            registeredById: tesoreraUser.id,
-            idempotencyKey: 'att-juan-perez-sep2026',
-            scannedAt: new Date('2026-09-04T18:05:00Z'),
-        },
-    });
-    await prisma.attendanceEvent.upsert({
-        where: {
-            meetingId_merchantId: {
-                meetingId: meeting.id,
-                merchantId: createdMerchants['MB-COM-00002'].id,
-            },
-        },
-        update: {},
-        create: {
-            meetingId: meeting.id,
-            merchantId: createdMerchants['MB-COM-00002'].id,
-            dni: '41235678',
-            deviceId: tesoreraDev.deviceId,
-            registeredById: tesoreraUser.id,
-            idempotencyKey: 'att-rosa-gutierrez-sep2026',
-            scannedAt: new Date('2026-09-04T18:12:00Z'),
-        },
-    });
-    console.log('✓ Asamblea General y Asistencias iniciales configuradas');
-    console.log('--- SEED COMPLETADO SATISFACTORIAMENTE ---');
+    console.log('✓ Obligaciones de pago del mes actual generadas para los 107 socios');
+    console.log('====================================================');
+    console.log('✓ CARGA DE SEED COMPLETADA CON ÉXITO');
+    console.log('✓ TOTAL SOCIOS ACTIVOS: 107');
+    console.log('✓ SOCIOS TITULARES: 102');
+    console.log('✓ SOCIOS EN PRUEBA: 5');
+    console.log('====================================================');
 }
 main()
     .catch((e) => {
-    console.error(e);
+    console.error('Error fatal al ejecutar seed:', e);
     process.exit(1);
 })
     .finally(async () => {

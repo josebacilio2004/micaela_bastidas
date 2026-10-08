@@ -1480,26 +1480,36 @@ async function main() {
     const stallCode = 'P-' + String(i).padStart(3, '0');
     let sectorCode = 'SEC-A';
     let desc = 'Pabellón A - Carnes y Aves';
+    let stallNumber = i;
     if (i > 27 && i <= 54) {
       sectorCode = 'SEC-B';
       desc = 'Pabellón B - Frutas y Verduras';
+      stallNumber = i - 27;
     } else if (i > 54 && i <= 81) {
       sectorCode = 'SEC-C';
       desc = 'Pabellón C - Abarrotes y Granos';
+      stallNumber = i - 54;
     } else if (i > 81 && i <= 107) {
       sectorCode = 'SEC-D';
       desc = 'Pabellón D - Comidas y Jugos';
+      stallNumber = i - 81;
     } else if (i > 107) {
       sectorCode = 'SEC-AMB';
       desc = 'Módulo Disponible para Nuevos Comerciantes / Inquilinos';
+      stallNumber = i - 107;
     }
 
     createdStalls[stallCode] = await prisma.marketStall.upsert({
       where: { code: stallCode },
-      update: {},
+      update: {
+        giro: createdSectors[sectorCode].name,
+        stallNumber,
+      },
       create: {
         code: stallCode,
         sectorId: createdSectors[sectorCode].id,
+        giro: createdSectors[sectorCode].name,
+        stallNumber,
         locationDescription: desc,
         status: i <= 107 ? StallStatus.OCUPADO : StallStatus.LIBRE,
       },
