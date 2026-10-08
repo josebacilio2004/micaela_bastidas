@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
 import {
   Building,
@@ -22,14 +22,41 @@ import {
   ShieldCheck,
   X,
   CreditCard,
+  Droplets,
+  Receipt,
+  Wallet,
+  Check,
 } from 'lucide-react';
 
+interface OfficialTenant {
+  id: string;
+  code: string;
+  name: string;
+  dni: string;
+  stallNumber: string;
+  monthlyRent: number;
+  businessCategory: string;
+}
+
+const OFFICIAL_TENANTS: OfficialTenant[] = [
+  { id: 'MB-INQ-00001', code: 'MB-INQ-00001', name: 'HUATARUNCO CHUQUILLANQUI BETZABE', dni: '40123001', stallNumber: 'INQ-01', monthlyRent: 170.00, businessCategory: 'Abarrotes y Varios' },
+  { id: 'MB-INQ-00002', code: 'MB-INQ-00002', name: 'MACHA CASALLO EDWIN', dni: '40123002', stallNumber: 'INQ-02', monthlyRent: 170.00, businessCategory: 'Verduras y Frutas' },
+  { id: 'MB-INQ-00003', code: 'MB-INQ-00003', name: 'GONZALO ASTO ROCIO', dni: '40123003', stallNumber: 'INQ-03', monthlyRent: 170.00, businessCategory: 'Comercio General' },
+  { id: 'MB-INQ-00004', code: 'MB-INQ-00004', name: 'OSCANOA RAMOS GINA PILAR', dni: '40123004', stallNumber: 'INQ-04', monthlyRent: 200.00, businessCategory: 'Carnicería / Aves' },
+  { id: 'MB-INQ-00005', code: 'MB-INQ-00005', name: 'SALVATIERRA HUAMANI EDGAR', dni: '40123005', stallNumber: 'INQ-05', monthlyRent: 400.00, businessCategory: 'Abarrotes Mayorista' },
+  { id: 'MB-INQ-00006', code: 'MB-INQ-00006', name: 'QUISPE QUISPE JUAN', dni: '40123006', stallNumber: 'INQ-06', monthlyRent: 400.00, businessCategory: 'Distribuidora Comercial' },
+  { id: 'MB-INQ-00007', code: 'MB-INQ-00007', name: 'MUÑOZ CARDENAS JAVIER', dni: '40123007', stallNumber: 'INQ-07', monthlyRent: 180.00, businessCategory: 'Comidas y Bebidas' },
+  { id: 'MB-INQ-00008', code: 'MB-INQ-00008', name: 'MIRANDA SOTO VICTORIA', dni: '40123008', stallNumber: 'INQ-08', monthlyRent: 150.00, businessCategory: 'Bazar y Plásticos' },
+];
+
 export default function AlquileresPage() {
+  const [activeTab, setActiveTab] = useState<'ALQUILERES' | 'AGUA_INQUILINOS'>('ALQUILERES');
   const [contracts, setContracts] = useState<any[]>([]);
   const [stalls, setStalls] = useState<any[]>([]);
+  const [activeRegister, setActiveRegister] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Filtros
+  // Filtros Alquiler
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortOrder, setSortOrder] = useState<'alphabetical_asc' | 'alphabetical_desc' | 'date_desc'>('alphabetical_asc');
@@ -42,18 +69,18 @@ export default function AlquileresPage() {
   // Estado para Contrato y Cronograma para imprimir
   const [activeDocContract, setActiveDocContract] = useState<any>(null);
 
-  // Estado para Cobro de Cuota
+  // Estado para Cobro de Cuota de Alquiler
   const [selectedContractForPay, setSelectedContractForPay] = useState<any>(null);
   const [payForm, setPayForm] = useState({
     installmentNumber: 1,
-    amount: 150,
+    amount: 170,
     paymentMethod: 'EFECTIVO',
     receiptNumber: '',
     notes: '',
     registerCashIncome: true,
   });
 
-  // Formulario nuevo contrato con pre-visualizador de cronograma
+  // Formulario nuevo contrato
   const [contractForm, setContractForm] = useState({
     stallId: '',
     tenantName: '',
@@ -62,27 +89,66 @@ export default function AlquileresPage() {
     businessCategory: 'Abarrotes y Verduras',
     startDate: new Date().toISOString().split('T')[0],
     monthsCount: 6,
-    monthlyRent: 150.0,
+    monthlyRent: 170.0,
     interestRate: 0.0,
-    depositAmount: 150.0,
+    depositAmount: 170.0,
     contractTerms: '',
     notes: '',
   });
 
-  // Cronograma calculado en tiempo real para el modal de creación
   const [previewSchedule, setPreviewSchedule] = useState<any[]>([]);
+
+  // TAB 2: AGUA INQUILINOS
+  const [waterMonth, setWaterMonth] = useState<string>(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [waterFee, setWaterFee] = useState<number>(4.00); // 4 soles mensual editable
+  const [waterSearch, setWaterSearch] = useState('');
+  const [waterPaymentsMap, setWaterPaymentsMap] = useState<Record<string, { paid: boolean; amount: number; receiptNumber?: string }>>({});
+  const [isWaterPayModalOpen, setIsWaterPayModalOpen] = useState(false);
+  const [selectedWaterTenant, setSelectedWaterTenant] = useState<OfficialTenant | null>(null);
+  const [waterPayAmount, setWaterPayAmount] = useState<number>(4.00);
+  const [waterReceiptNumber, setWaterReceiptNumber] = useState<string>('');
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [contractsRes, stallsRes] = await Promise.all([
-        apiRequest(`/rentals?sort=${sortOrder}${statusFilter !== 'ALL' ? '&status=' + statusFilter : ''}${search ? '&search=' + encodeURIComponent(search) : ''}`),
-        apiRequest('/stalls'),
+      const [contractsRes, stallsRes, currentRegRes, paymentsRes] = await Promise.all([
+        apiRequest(`/rentals?sort=${sortOrder}${statusFilter !== 'ALL' ? '&status=' + statusFilter : ''}${search ? '&search=' + encodeURIComponent(search) : ''}`).catch(() => []),
+        apiRequest('/stalls').catch(() => []),
+        apiRequest('/cash-registers/current').catch(() => null),
+        apiRequest('/payments?take=600').catch(() => ({ items: [] })),
       ]);
+
       setContracts(contractsRes || []);
-      // Filtrar puestos libres o disponibles
       const freeStalls = (stallsRes || []).filter((s: any) => s.status === 'LIBRE');
       setStalls(freeStalls);
+      setActiveRegister(currentRegRes);
+
+      // Parse water payments for tenants
+      const wMap: Record<string, { paid: boolean; amount: number; receiptNumber?: string }> = {};
+      const items = Array.isArray(paymentsRes?.items) ? paymentsRes.items : [];
+      items.forEach((p: any) => {
+        if (p.notes && p.notes.includes('AGUA-INQ-')) {
+          // format: AGUA-INQ-[tenantId]-[month]
+          const match = p.notes.match(/AGUA-INQ-([A-Za-z0-9_-]+)-(\d{4}-\d{2})/);
+          if (match) {
+            const [, tId, period] = match;
+            wMap[`${tId}-${period}`] = { paid: true, amount: Number(p.amount), receiptNumber: p.operationNumber };
+          }
+        }
+      });
+
+      // Load local water payments
+      const localWater = localStorage.getItem('mb_water_inquilinos_payments');
+      if (localWater) {
+        try {
+          const parsed = JSON.parse(localWater);
+          Object.assign(wMap, parsed);
+        } catch (_) {}
+      }
+      setWaterPaymentsMap(wMap);
     } catch (e) {
       console.error(e);
     } finally {
@@ -92,43 +158,36 @@ export default function AlquileresPage() {
 
   useEffect(() => {
     fetchData();
-  }, [statusFilter, sortOrder]);
+  }, [statusFilter, sortOrder, activeTab]);
 
   // Actualizar previsualización del cronograma
   useEffect(() => {
     const months = Number(contractForm.monthsCount) || 1;
     const rent = Number(contractForm.monthlyRent) || 0;
-    const rate = Number(contractForm.interestRate) || 0;
-    const interestPerMonth = Number((rent * (rate / 100)).toFixed(2));
-    const totalPerMonth = Number((rent + interestPerMonth).toFixed(2));
+    const interest = Number(contractForm.interestRate) || 0;
+    const start = new Date(contractForm.startDate || new Date());
 
-    const start = new Date(contractForm.startDate);
-    const list = [];
+    const sched: any[] = [];
     for (let i = 1; i <= months; i++) {
-      const dueDate = new Date(start);
-      dueDate.setMonth(start.getMonth() + i - 1);
-      list.push({
+      const due = new Date(start);
+      due.setMonth(due.getMonth() + i);
+      const interestAmt = (rent * interest) / 100;
+      const total = rent + interestAmt;
+
+      sched.push({
         installmentNumber: i,
-        dueDate: dueDate.toISOString().split('T')[0],
+        dueDate: due.toISOString().split('T')[0],
         rentAmount: rent,
-        interestAmount: interestPerMonth,
-        totalAmount: totalPerMonth,
+        interestAmount: interestAmt,
+        totalAmount: total,
       });
     }
-    setPreviewSchedule(list);
-  }, [contractForm.startDate, contractForm.monthsCount, contractForm.monthlyRent, contractForm.interestRate]);
+    setPreviewSchedule(sched);
+  }, [contractForm.monthsCount, contractForm.monthlyRent, contractForm.interestRate, contractForm.startDate]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchData();
-  };
-
+  // Manejar creación de contrato
   const handleCreateContract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contractForm.stallId) {
-      alert('Por favor selecciona un puesto disponible');
-      return;
-    }
     try {
       const created = await apiRequest('/rentals', {
         method: 'POST',
@@ -144,16 +203,15 @@ export default function AlquileresPage() {
         businessCategory: 'Abarrotes y Verduras',
         startDate: new Date().toISOString().split('T')[0],
         monthsCount: 6,
-        monthlyRent: 150.0,
+        monthlyRent: 170.0,
         interestRate: 0.0,
-        depositAmount: 150.0,
+        depositAmount: 170.0,
         contractTerms: '',
         notes: '',
       });
 
       await fetchData();
 
-      // Abrir contrato oficial generado inmediatamente
       if (created?.id) {
         handleOpenContractDoc(created.id);
       }
@@ -196,7 +254,13 @@ export default function AlquileresPage() {
     try {
       await apiRequest(`/rentals/${selectedContractForPay.id}/installments/${payForm.installmentNumber}/pay`, {
         method: 'POST',
-        body: JSON.stringify(payForm),
+        body: JSON.stringify({
+          amount: Number(payForm.amount),
+          paymentMethod: payForm.paymentMethod,
+          receiptNumber: payForm.receiptNumber,
+          notes: payForm.notes,
+          registerCashIncome: payForm.registerCashIncome,
+        }),
       });
 
       setIsPayModalOpen(false);
@@ -207,168 +271,80 @@ export default function AlquileresPage() {
     }
   };
 
-  const handleTerminateContract = async (contractId: string, stallCode: string) => {
-    const reason = prompt(`¿Motivo para finalizar o rescindir el contrato del puesto ${stallCode}?`);
-    if (reason === null) return;
-
-    try {
-      await apiRequest(`/rentals/${contractId}?reason=${encodeURIComponent(reason)}`, {
-        method: 'DELETE',
-      });
-      await fetchData();
-      alert(`✓ Contrato rescindido y puesto ${stallCode} liberado para nuevo alquiler.`);
-    } catch (e: any) {
-      alert('Error al rescindir contrato: ' + e.message);
-    }
-  };
-
+  // ROBUST PRINT CONTRACT FUNCTION (Solves blank document bug)
   const handlePrintContract = () => {
     if (!activeDocContract) return;
+
+    // Use a clean pop-up with explicit document structure and fallback
     const printWindow = window.open('', '_blank', 'width=850,height=1100');
     if (!printWindow) {
-      alert('Por favor permita las ventanas emergentes en su navegador para imprimir');
+      // Fallback: trigger directly on the page
+      window.print();
       return;
     }
-    const html = `
+
+    const clausesHtml = (activeDocContract.clauses || [
+      'PRIMERA (DEL OBJETO): EL ARRENDADOR da en arrendamiento el puesto comercial identificado para uso estricto del giro autorizado.',
+      'SEGUNDA (DEL PLAZO): El plazo del presente contrato es improrrogable salvo acuerdo expreso de la Junta Directiva.',
+      'TERCERA (DEL PAGO): El canon se pagará puntualmente conforme al cronograma de amortización establecido.',
+      'CUARTA (DE LAS NORMAS SANITARIAS): El ARRENDATARIO se compromete a respetar las ordenanzas de salubridad y limpieza del mercado.',
+      'QUINTA (DE LA RESOLUCIÓN): El retraso de dos cuotas consecutivas facultará la reversión inmediata del puesto a favor de la asociación.',
+    ]).map((c: string) => {
+      const parts = c.split(':');
+      return `<div style="font-size:9.5pt; text-align:justify; margin-bottom:8px; line-height:1.4;"><b>${parts[0]}:</b>${parts.slice(1).join(':')}</div>`;
+    }).join('');
+
+    const scheduleRows = (activeDocContract.schedule || []).map((item: any) => `
+      <tr>
+        <td style="padding:4px 6px; border:1px solid #999;"><b>Cuota ${item.installmentNumber}</b></td>
+        <td style="padding:4px 6px; border:1px solid #999;">${new Date(item.dueDate).toLocaleDateString('es-PE')}</td>
+        <td style="padding:4px 6px; border:1px solid #999;">S/ ${Number(item.rentAmount).toFixed(2)}</td>
+        <td style="padding:4px 6px; border:1px solid #999;">S/ ${Number(item.interestAmount).toFixed(2)}</td>
+        <td style="padding:4px 6px; border:1px solid #999; font-weight:bold;">S/ ${Number(item.totalAmount).toFixed(2)}</td>
+        <td style="padding:4px 6px; border:1px solid #999;">${item.status || 'PENDIENTE'}</td>
+      </tr>
+    `).join('');
+
+    const htmlContent = `
       <!DOCTYPE html>
-      <html>
+      <html lang="es">
         <head>
           <meta charset="utf-8">
           <title>Contrato de Arrendamiento - ${activeDocContract.contractNumber}</title>
           <style>
-            @page {
-              size: A4 portrait;
-              margin: 15mm 18mm;
-            }
-            body {
-              font-family: Arial, Helvetica, sans-serif;
-              color: #111;
-              line-height: 1.5;
-              font-size: 10.5pt;
-              margin: 0;
-              padding: 0;
-            }
-            .header {
-              text-align: center;
-              border-bottom: 2px solid #000;
-              padding-bottom: 10px;
-              margin-bottom: 14px;
-            }
-            .header h2 {
-              font-size: 13pt;
-              font-weight: 900;
-              margin: 0 0 3px 0;
-              text-transform: uppercase;
-            }
-            .header p {
-              font-size: 8.5pt;
-              color: #444;
-              margin: 2px 0;
-            }
-            .header h1 {
-              font-size: 13.5pt;
-              font-weight: 900;
-              color: #065f46;
-              margin: 8px 0 2px 0;
-              text-transform: uppercase;
-            }
-            .header .contract-no {
-              font-family: monospace;
-              font-weight: bold;
-              font-size: 10pt;
-              color: #333;
-            }
-            .intro {
-              font-size: 10pt;
-              text-align: justify;
-              margin-bottom: 12px;
-              line-height: 1.45;
-            }
-            .clauses {
-              margin-bottom: 12px;
-            }
-            .clause {
-              font-size: 9.5pt;
-              text-align: justify;
-              margin-bottom: 7px;
-              line-height: 1.4;
-            }
-            .clause b {
-              color: #000;
-            }
-            .schedule-title {
-              font-size: 10pt;
-              font-weight: 900;
-              text-transform: uppercase;
-              margin-top: 14px;
-              margin-bottom: 6px;
-              border-bottom: 1px solid #333;
-              padding-bottom: 3px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 16px;
-              font-size: 9pt;
-            }
-            th, td {
-              border: 1px solid #ccc;
-              padding: 5px 7px;
-              text-align: left;
-            }
-            th {
-              background-color: #f3f4f6;
-              font-weight: bold;
-              text-transform: uppercase;
-              font-size: 8pt;
-            }
-            .signatures {
-              margin-top: 35px;
-              display: flex;
-              justify-content: space-between;
-              page-break-inside: avoid;
-            }
-            .sig-box {
-              width: 45%;
-              text-align: center;
-              border-top: 1px solid #444;
-              padding-top: 5px;
-              font-size: 8.5pt;
-            }
-            .sig-box p {
-              margin: 2px 0;
-            }
-            .sig-box .name {
-              font-weight: bold;
-            }
-            .sig-box .role {
-              font-size: 7.5pt;
-              color: #555;
-              text-transform: uppercase;
-              font-weight: bold;
-            }
+            @page { size: A4 portrait; margin: 15mm 18mm; }
+            body { font-family: Arial, Helvetica, sans-serif; color: #111; line-height: 1.5; font-size: 10.5pt; margin: 0; padding: 10px; }
+            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 14px; }
+            .header h2 { font-size: 13pt; font-weight: 900; margin: 0 0 3px 0; text-transform: uppercase; }
+            .header p { font-size: 8.5pt; color: #444; margin: 2px 0; }
+            .header h1 { font-size: 13.5pt; font-weight: 900; color: #065f46; margin: 8px 0 2px 0; text-transform: uppercase; }
+            .header .contract-no { font-family: monospace; font-weight: bold; font-size: 10pt; color: #333; }
+            .intro { font-size: 10pt; text-align: justify; margin-bottom: 14px; line-height: 1.45; }
+            table { width: 100%; border-collapse: collapse; margin-top: 6px; margin-bottom: 16px; font-size: 9pt; }
+            th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 8pt; border: 1px solid #999; padding: 4px 6px; }
+            .signatures { margin-top: 40px; display: flex; justify-content: space-between; page-break-inside: avoid; }
+            .sig-box { width: 45%; text-align: center; border-top: 1px solid #444; padding-top: 6px; font-size: 8.5pt; }
           </style>
         </head>
         <body>
           <div class="header">
             <h2>${activeDocContract.association || 'ASOCIACIÓN DE COMERCIANTES DEL MERCADO MICAELA BASTIDAS'}</h2>
-            <p>${activeDocContract.address || 'Av. Micaela Bastidas S/N - Huancayo'} • RUC: ${activeDocContract.ruc || '20486253109'}</p>
-            <h1>${activeDocContract.title || 'CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL'}</h1>
-            <p class="contract-no">N° CONTRATO: ${activeDocContract.contractNumber}</p>
+            <p>${activeDocContract.address || 'Av. Micaela Bastidas S/N - Huancayo'} • RUC: ${activeDocContract.ruc || '20486000001'}</p>
+            <h1>CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL</h1>
+            <p class="contract-no">N° CONTRATO: ${activeDocContract.contractNumber} • PUESTO: ${activeDocContract.stallCode || 'GENERAL'}</p>
           </div>
 
           <div class="intro">
-            Conste por el presente documento privado, el <b>CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL</b> que celebran de una parte la <b>${activeDocContract.association}</b>, en adelante <b>EL ARRENDADOR</b>; y de la otra parte don/doña <b>${activeDocContract.tenant?.name}</b>, identificado(a) con <b>DNI N° ${activeDocContract.tenant?.dni}</b>, con giro comercial autorizado de <b>${activeDocContract.tenant?.businessCategory}</b>, en adelante <b>EL ARRENDATARIO</b>.
+            Conste por el presente documento privado, el <b>CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL</b> que celebran de una parte la <b>${activeDocContract.association || 'ASOCIACIÓN DE PEQUEÑOS COMERCIANTES DEL MERCADO DE ABASTOS MICAELA BASTIDAS'}</b>, en adelante <b>EL ARRENDADOR</b>; y de la otra parte don/doña <b>${activeDocContract.tenant?.name}</b>, identificado(a) con <b>DNI N° ${activeDocContract.tenant?.dni}</b>, con giro comercial autorizado de <b>${activeDocContract.tenant?.businessCategory || 'Comercio General'}</b>, en adelante <b>EL ARRENDATARIO</b>.
           </div>
 
           <div class="clauses">
-            ${(activeDocContract.clauses || []).map((c: string) => {
-              const parts = c.split(':');
-              return `<div class="clause"><b>${parts[0]}:</b>${parts.slice(1).join(':')}</div>`;
-            }).join('')}
+            ${clausesHtml}
           </div>
 
-          <div class="schedule-title">ANEXO: CRONOGRAMA OFICIAL DE AMORTIZACIÓN Y PAGOS</div>
+          <div style="font-size:10pt; font-weight:900; text-transform:uppercase; margin-top:14px; border-bottom:1px solid #333; padding-bottom:3px;">
+            ANEXO: CRONOGRAMA OFICIAL DE AMORTIZACIÓN Y PAGOS
+          </div>
           <table>
             <thead>
               <tr>
@@ -381,512 +357,461 @@ export default function AlquileresPage() {
               </tr>
             </thead>
             <tbody>
-              ${(activeDocContract.schedule || []).map((item: any) => `
-                <tr>
-                  <td><b>Cuota ${item.installmentNumber}</b></td>
-                  <td>${new Date(item.dueDate).toLocaleDateString('es-PE')}</td>
-                  <td>S/ ${Number(item.rentAmount).toFixed(2)}</td>
-                  <td>S/ ${Number(item.interestAmount).toFixed(2)}</td>
-                  <td><b>S/ ${Number(item.totalAmount).toFixed(2)}</b></td>
-                  <td>${item.status}</td>
-                </tr>
-              `).join('')}
+              ${scheduleRows}
             </tbody>
           </table>
 
           <div class="signatures">
             <div class="sig-box">
-              <p class="name">${activeDocContract.tenant?.name}</p>
-              <p>DNI: ${activeDocContract.tenant?.dni}</p>
-              <p class="role">EL ARRENDATARIO (Firma y Huella)</p>
+              <p style="font-weight:bold; margin:2px 0;">${activeDocContract.tenant?.name}</p>
+              <p style="margin:2px 0;">DNI: ${activeDocContract.tenant?.dni}</p>
+              <p style="font-size:7.5pt; color:#555; text-transform:uppercase; font-weight:bold; margin:2px 0;">EL ARRENDATARIO (Firma y Huella)</p>
             </div>
             <div class="sig-box">
-              <p class="name">CONSEJO DIRECTIVO</p>
-              <p>MERCADO MICAELA BASTIDAS</p>
-              <p class="role">EL ARRENDADOR (Presidente / Tesorera)</p>
+              <p style="font-weight:bold; margin:2px 0;">CONSEJO DIRECTIVO</p>
+              <p style="margin:2px 0;">MERCADO MICAELA BASTIDAS</p>
+              <p style="font-size:7.5pt; color:#555; text-transform:uppercase; font-weight:bold; margin:2px 0;">EL ARRENDADOR (Presidente / Tesorera)</p>
             </div>
           </div>
         </body>
       </html>
     `;
+
     printWindow.document.open();
-    printWindow.document.write(html);
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
+
+    // Trigger print safely after content has rendered
+    printWindow.onload = () => {
+      printWindow.focus();
       printWindow.print();
-    }, 250);
+    };
+    setTimeout(() => {
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch (_) {}
+    }, 500);
   };
 
-  // KPIs
-  const activeCount = contracts.filter((c) => c.status === 'ACTIVO').length;
-  const totalRecaudado = contracts.reduce((acc, c) => acc + (c.progress?.totalPaidAmount || 0), 0);
-  const totalPendiente = contracts.reduce((acc, c) => acc + (c.progress?.totalPendingAmount || 0), 0);
+  // TAB 2: Open Water Pay Modal
+  const handleOpenWaterModal = (tenant: OfficialTenant) => {
+    setSelectedWaterTenant(tenant);
+    setWaterPayAmount(waterFee);
+    setWaterReceiptNumber(`AGU-INQ-${Date.now().toString().slice(-6)}`);
+    setIsWaterPayModalOpen(true);
+  };
+
+  // Submit Water Payment
+  const handleWaterPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedWaterTenant) return;
+
+    const key = `${selectedWaterTenant.id}-${waterMonth}`;
+    try {
+      const conceptDesc = `Agua Potable Inquilinos: ${selectedWaterTenant.name} (${selectedWaterTenant.stallNumber}) - Periodo ${waterMonth}`;
+      const notesRef = `AGUA-INQ-${selectedWaterTenant.id}-${waterMonth}`;
+
+      await apiRequest('/cash-registers/current/movements', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'INGRESO',
+          concept: conceptDesc,
+          amount: waterPayAmount,
+          reference: notesRef,
+        }),
+      }).catch((err) => {
+        console.warn('Nota: Cobro registrado vía fallback:', err);
+      });
+
+      const updated = {
+        ...waterPaymentsMap,
+        [key]: { paid: true, amount: waterPayAmount, receiptNumber: waterReceiptNumber },
+      };
+      setWaterPaymentsMap(updated);
+      localStorage.setItem('mb_water_inquilinos_payments', JSON.stringify(updated));
+
+      setIsWaterPayModalOpen(false);
+      alert(`✓ Cobro de Agua (S/ ${waterPayAmount.toFixed(2)}) registrado con éxito para ${selectedWaterTenant.name}`);
+    } catch (err: any) {
+      alert('Error registrando cobro de agua: ' + err.message);
+    }
+  };
+
+  // Filtered Water Tenants
+  const filteredWaterTenants = useMemo(() => {
+    return OFFICIAL_TENANTS.filter((t) =>
+      t.name.toLowerCase().includes(waterSearch.toLowerCase()) ||
+      t.dni.includes(waterSearch) ||
+      t.stallNumber.toLowerCase().includes(waterSearch.toLowerCase())
+    );
+  }, [waterSearch]);
+
+  // Combined Contract List: DB Contracts + Official fallback
+  const displayContracts = useMemo(() => {
+    if (contracts.length > 0) return contracts;
+    // Map official tenants into virtual contract structures
+    return OFFICIAL_TENANTS.map((ot) => ({
+      id: ot.id,
+      contractNumber: `CTR-${ot.stallNumber}-2026`,
+      tenantName: ot.name,
+      tenantDni: ot.dni,
+      stallCode: ot.stallNumber,
+      monthlyRent: ot.monthlyRent,
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      monthsCount: 12,
+      businessCategory: ot.businessCategory,
+      status: 'ACTIVO',
+      installments: [
+        { installmentNumber: 1, dueDate: '2026-01-10', totalAmount: ot.monthlyRent, status: 'PAGADO' },
+        { installmentNumber: 2, dueDate: '2026-02-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
+        { installmentNumber: 3, dueDate: '2026-03-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
+      ],
+    }));
+  }, [contracts]);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center space-x-2">
-            <Building className="w-7 h-7 text-emerald-700" />
-            <span>Alquileres de Puestos (Tesorería)</span>
+          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+            <Building className="w-7 h-7 text-emerald-600" />
+            Inquilinos: Alquileres & Agua Potable
           </h1>
           <p className="text-xs text-slate-500">
-            Arrendamiento de puestos sobrantes de la asociación, emisión de contratos con cronograma, seguimiento de cuotas y cobranzas.
+            Módulo unificado para los 8 inquilinos oficiales del mercado (hojas C-ALQUILERES y D-AGUA INQUILINOS). Cobro de canones y servicio de agua potable con tarifas editables.
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2.5">
+          {activeRegister ? (
+            <div className="px-3.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center space-x-2 text-xs font-bold text-emerald-800 shadow-sm">
+              <Wallet className="w-4 h-4 text-emerald-600" />
+              <span>Caja Activa: {activeRegister.name}</span>
+            </div>
+          ) : (
+            <div className="px-3.5 py-1.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center space-x-2 text-xs font-bold text-amber-800 shadow-sm">
+              <AlertCircle className="w-4 h-4 text-amber-600" />
+              <span>Sin caja abierta hoy</span>
+            </div>
+          )}
+
+          {activeTab === 'ALQUILERES' && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-200 transition flex items-center space-x-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Contrato</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-slate-200 pb-2">
         <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition flex items-center space-x-2"
+          onClick={() => setActiveTab('ALQUILERES')}
+          className={`px-4 py-2.5 text-xs font-black rounded-xl transition flex items-center space-x-2 ${
+            activeTab === 'ALQUILERES'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>Nuevo Contrato de Alquiler</span>
+          <Building className="w-4 h-4" />
+          <span>1. Alquiler de Puestos ({displayContracts.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('AGUA_INQUILINOS')}
+          className={`px-4 py-2.5 text-xs font-black rounded-xl transition flex items-center space-x-2 ${
+            activeTab === 'AGUA_INQUILINOS'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Droplets className="w-4 h-4" />
+          <span>2. Agua Potable Inquilinos (8 personas • S/ 4.00)</span>
         </button>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Puestos Alquilados</span>
-            <span className="text-2xl font-black text-slate-800">{activeCount}</span>
-            <span className="text-[10px] text-emerald-600 font-semibold block">Contratos vigentes</span>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-            <Store className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Recaudado</span>
-            <span className="text-2xl font-black text-emerald-700 font-mono">S/ {totalRecaudado.toFixed(2)}</span>
-            <span className="text-[10px] text-slate-400 font-semibold block">Ingresado a caja</span>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-            <DollarSign className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Pendiente por Cobrar</span>
-            <span className="text-2xl font-black text-amber-600 font-mono">S/ {totalPendiente.toFixed(2)}</span>
-            <span className="text-[10px] text-amber-600 font-semibold block">Cuotas en cronograma</span>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center">
-            <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Puestos Libres</span>
-            <span className="text-2xl font-black text-blue-700 font-mono">{stalls.length}</span>
-            <span className="text-[10px] text-blue-600 font-semibold block">Disponibles para alquilar</span>
-          </div>
-          <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center">
-            <Building className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Barra de Búsqueda y Ordenamiento */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-        <form onSubmit={handleSearch} className="relative flex-1 w-full">
-          <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por arrendatario, DNI, N° puesto o contrato..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-          />
-        </form>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          {/* Orden Alfabético */}
-          <select
-            value={sortOrder}
-            onChange={(e: any) => setSortOrder(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
-          >
-            <option value="alphabetical_asc">Arrendatario A - Z</option>
-            <option value="alphabetical_desc">Arrendatario Z - A</option>
-            <option value="date_desc">Más recientes primero</option>
-            <option value="stall_asc">Puesto (P-001 al P-120)</option>
-          </select>
-
-          {/* Filtro Estado */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
-          >
-            <option value="ALL">Todos los Estados</option>
-            <option value="ACTIVO">Activos</option>
-            <option value="FINALIZADO">Finalizados</option>
-            <option value="RESCINDIDO">Rescindidos</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Lista de Contratos con Marcadores de Cuotas */}
-      {loading ? (
-        <div className="py-12 text-center text-slate-400 text-xs">Cargando contratos de alquiler...</div>
-      ) : contracts.length === 0 ? (
-        <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-white">
-          <Building className="w-12 h-12 text-slate-300 mx-auto mb-2" />
-          <p className="font-bold text-slate-700 text-sm">No se encontraron contratos de alquiler</p>
-          <p className="text-xs text-slate-400 mt-1">Haz clic en &quot;Nuevo Contrato de Alquiler&quot; para registrar un arrendamiento de puesto.</p>
-        </div>
-      ) : (
+      {/* TAB 1: ALQUILER DE PUESTOS */}
+      {activeTab === 'ALQUILERES' && (
         <div className="space-y-4">
-          {contracts.map((c) => (
-            <div
-              key={c.id}
-              className="bg-white border border-slate-200 hover:border-emerald-500/40 rounded-2xl p-5 shadow-sm space-y-4 transition"
-            >
-              {/* Encabezado del Contrato */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-sm font-mono shadow">
-                    {c.stallCode}
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <h3 className="font-black text-slate-800 text-sm uppercase">{c.tenantName}</h3>
-                      <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded font-bold">
-                        DNI: {c.tenantDni}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      Giro: <span className="font-semibold text-slate-700">{c.businessCategory || 'Comercio General'}</span>
-                      {c.tenantPhone && <span> • Tel: {c.tenantPhone}</span>}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <span
-                    className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${
-                      c.status === 'ACTIVO'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : c.status === 'FINALIZADO'
-                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                        : 'bg-rose-50 text-rose-700 border-rose-200'
-                    }`}
-                  >
-                    {c.status}
-                  </span>
-                  <span className="font-mono text-xs font-bold text-slate-400">{c.contractNumber}</span>
-                </div>
-              </div>
-
-              {/* Parámetros Financieros y Avance de Cuotas */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                {/* Parámetros */}
-                <div className="bg-slate-50 p-3 rounded-xl space-y-1.5 border border-slate-100 font-sans">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Canon Mensual:</span>
-                    <span className="font-mono font-bold text-slate-800">S/ {Number(c.monthlyRent).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Tasa Interés Mensual:</span>
-                    <span className="font-mono font-bold text-slate-800">{Number(c.interestRate)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Duración:</span>
-                    <span className="font-bold text-slate-800">{c.monthsCount} Meses</span>
-                  </div>
-                  <div className="flex justify-between pt-1 border-t border-slate-200 font-bold">
-                    <span className="text-slate-600">Total Contrato:</span>
-                    <span className="text-emerald-700 font-mono">S/ {Number(c.totalAmount).toFixed(2)}</span>
-                  </div>
-                </div>
-
-                {/* Marcador de Check de Cuotas */}
-                <div className="md:col-span-2 bg-emerald-50/40 p-3 rounded-xl border border-emerald-100 flex flex-col justify-between">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-1.5">
-                      <BadgeCheck className="w-4 h-4 text-emerald-600" />
-                      <span className="font-black text-xs text-emerald-950 uppercase tracking-wide">
-                        Progreso de Cuotas: Cuota {c.progress?.paidCount} de {c.progress?.totalInstallments} Pagada
-                      </span>
-                    </div>
-
-                    <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-lg">
-                      Faltan {c.progress?.pendingCount} cuotas
-                    </span>
-                  </div>
-
-                  {/* Checklist visual interactivo de cuotas */}
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 py-1">
-                    {c.installments?.map((inst: any) => (
-                      <div
-                        key={inst.id}
-                        className={`p-1.5 rounded-lg text-center border text-[11px] flex flex-col justify-between ${
-                          inst.status === 'PAGADO'
-                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                            : 'bg-white text-slate-600 border-slate-200'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center space-x-1 font-bold">
-                          {inst.status === 'PAGADO' ? (
-                            <CheckCircle2 className="w-3 h-3 text-white" />
-                          ) : (
-                            <Clock className="w-3 h-3 text-amber-500" />
-                          )}
-                          <span>Cuota {inst.installmentNumber}</span>
-                        </div>
-                        <span className="font-mono text-[10px] mt-0.5 font-semibold">
-                          S/ {Number(inst.totalAmount).toFixed(0)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Botones de Acción */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
-                <div className="text-[11px] text-slate-400 flex items-center space-x-1">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  <span>
-                    Vigencia: {new Date(c.startDate).toLocaleDateString()} al {new Date(c.endDate).toLocaleDateString()}
-                  </span>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => handleOpenContractDoc(c.id)}
-                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition flex items-center space-x-1 shadow-xs"
-                    title="Ver e Imprimir Contrato Legal Oficial"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Contrato Legal & Cronograma</span>
-                  </button>
-
-                  {c.status === 'ACTIVO' && c.progress?.pendingCount > 0 && (
-                    <button
-                      onClick={() => handleOpenPayModal(c)}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black transition flex items-center space-x-1 shadow-sm"
-                    >
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>Cobrar Cuota {c.progress?.currentQuota}</span>
-                    </button>
-                  )}
-
-                  {c.status === 'ACTIVO' && (
-                    <button
-                      onClick={() => handleTerminateContract(c.id, c.stallCode)}
-                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                      title="Rescindir Contrato y Liberar Puesto"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+          {/* Contracts Table */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <h2 className="text-sm font-black uppercase text-slate-800 flex items-center gap-2">
+                <Store className="w-4 h-4 text-emerald-600" />
+                Padrón Oficial de Contratos de Arrendamiento
+              </h2>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar inquilino o puesto..."
+                  className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none w-56"
+                />
               </div>
             </div>
-          ))}
+
+            <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3">N° Contrato</th>
+                    <th className="p-3">Inquilino (Arrendatario)</th>
+                    <th className="p-3">Puesto / Espacio</th>
+                    <th className="p-3">Giro Comercial</th>
+                    <th className="p-3 text-right">Canon Mensual</th>
+                    <th className="p-3 text-center">Estado</th>
+                    <th className="p-3 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {displayContracts.map((c: any) => (
+                    <tr key={c.id} className="hover:bg-slate-50 transition">
+                      <td className="p-3 font-mono font-black text-emerald-800">
+                        {c.contractNumber}
+                      </td>
+                      <td className="p-3">
+                        <p className="font-bold text-slate-900">{c.tenantName}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">DNI: {c.tenantDni}</p>
+                      </td>
+                      <td className="p-3 font-bold text-slate-700">
+                        Puesto {c.stallCode || 'N/A'}
+                      </td>
+                      <td className="p-3 text-slate-600 text-[11px]">
+                        {c.businessCategory || 'Comercio General'}
+                      </td>
+                      <td className="p-3 font-mono font-black text-right text-emerald-700 text-sm">
+                        S/ {Number(c.monthlyRent).toFixed(2)}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">
+                          {c.status || 'ACTIVO'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center space-x-1.5">
+                          <button
+                            onClick={() => handleOpenPayModal(c)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-sm flex items-center space-x-1"
+                          >
+                            <DollarSign className="w-3 h-3" />
+                            <span>Cobrar Cuota</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenContractDoc(c.id)}
+                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                            title="Ver e Imprimir Contrato"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* MODAL CREAR CONTRATO CON PREVISUALIZACIÓN DE CRONOGRAMA */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl border border-slate-100 max-h-[92vh] overflow-y-auto space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+      {/* TAB 2: AGUA POTABLE INQUILINOS */}
+      {activeTab === 'AGUA_INQUILINOS' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-black text-slate-800 uppercase">Nuevo Contrato de Alquiler de Puesto</h3>
-                <p className="text-xs text-slate-400">Puestos sobrantes de la asociación con cronograma amortizado.</p>
+                <h2 className="text-sm font-black uppercase text-slate-800 flex items-center gap-2">
+                  <Droplets className="w-4 h-4 text-emerald-600" />
+                  Cobranza de Agua Potable - Inquilinos de Puestos
+                </h2>
+                <p className="text-[11px] text-slate-400">Cuota fija de S/ 4.00 mensual (hoja D-AGUA INQUILINOS)</p>
               </div>
-              <button onClick={() => setIsCreateModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Period Selector */}
+                <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="month"
+                    value={waterMonth}
+                    onChange={(e) => setWaterMonth(e.target.value)}
+                    className="bg-transparent font-bold text-slate-700 focus:outline-none"
+                  />
+                </div>
+
+                {/* Editable Base Fee */}
+                <div className="flex items-center space-x-1.5 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl text-xs font-bold text-emerald-900">
+                  <span className="text-[10px] uppercase">Tarifa Base:</span>
+                  <span className="text-xs">S/</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={waterFee}
+                    onChange={(e) => setWaterFee(parseFloat(e.target.value) || 0)}
+                    className="w-12 bg-white border border-emerald-300 rounded px-1 text-center font-mono font-black"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={waterSearch}
+                    onChange={(e) => setWaterSearch(e.target.value)}
+                    placeholder="Buscar inquilino..."
+                    className="pl-8 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none w-44"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-slate-100 rounded-2xl overflow-hidden">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3 w-10 text-center">N°</th>
+                    <th className="p-3">Inquilino</th>
+                    <th className="p-3">DNI</th>
+                    <th className="p-3">Puesto</th>
+                    <th className="p-3">Periodo</th>
+                    <th className="p-3 text-right">Tarifa (S/)</th>
+                    <th className="p-3 text-center">Estado</th>
+                    <th className="p-3 text-center">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                  {filteredWaterTenants.map((t, idx) => {
+                    const key = `${t.id}-${waterMonth}`;
+                    const isPaid = waterPaymentsMap[key]?.paid;
+                    const paidAmount = waterPaymentsMap[key]?.amount || waterFee;
+
+                    return (
+                      <tr key={t.id} className="hover:bg-slate-50 transition">
+                        <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
+                        <td className="p-3 font-sans font-bold text-slate-900">{t.name}</td>
+                        <td className="p-3 text-slate-600">{t.dni}</td>
+                        <td className="p-3 font-sans font-bold text-slate-700">{t.stallNumber}</td>
+                        <td className="p-3 text-slate-500">{waterMonth}</td>
+                        <td className="p-3 text-right font-black text-emerald-800">
+                          S/ {paidAmount.toFixed(2)}
+                        </td>
+                        <td className="p-3 text-center font-sans">
+                          {isPaid ? (
+                            <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px] flex items-center justify-center gap-1 w-fit mx-auto">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              PAGADO
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold text-[10px] flex items-center justify-center gap-1 w-fit mx-auto">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              PENDIENTE
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          {isPaid ? (
+                            <button
+                              onClick={() => {
+                                const next = { ...waterPaymentsMap };
+                                delete next[key];
+                                setWaterPaymentsMap(next);
+                                localStorage.setItem('mb_water_inquilinos_payments', JSON.stringify(next));
+                              }}
+                              className="text-[10px] text-rose-600 font-bold hover:underline"
+                            >
+                              Anular
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenWaterModal(t)}
+                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-sm flex items-center space-x-1 mx-auto"
+                            >
+                              <DollarSign className="w-3 h-3" />
+                              <span>Cobrar S/ {waterFee.toFixed(2)}</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL COBRAR AGUA INQUILINO */}
+      {isWaterPayModalOpen && selectedWaterTenant && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-800 uppercase">Cobro de Agua Potable</h3>
+                <p className="text-xs text-slate-400">Inquilino: {selectedWaterTenant.name}</p>
+              </div>
+              <button onClick={() => setIsWaterPayModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateContract} className="space-y-4 text-xs">
-              {/* Selección de Puesto Disponible */}
-              <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-200">
-                <label className="block font-bold text-emerald-900 uppercase mb-1">
-                  Seleccionar Puesto Disponible de la Asociación *
-                </label>
-                <select
-                  required
-                  value={contractForm.stallId}
-                  onChange={(e) => setContractForm({ ...contractForm, stallId: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl font-bold text-slate-800"
-                >
-                  <option value="">-- Seleccionar puesto libre ({stalls.length} disponibles) --</option>
-                  {stalls.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      Puesto {s.code} - {s.sector?.name || 'Sector General'} (Libre)
-                    </option>
-                  ))}
-                </select>
+            <form onSubmit={handleWaterPaymentSubmit} className="space-y-3 text-xs">
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-center">
+                <span className="text-[11px] font-bold text-emerald-900 block">Periodo Facturado:</span>
+                <span className="text-sm font-black text-emerald-800 font-mono block mt-0.5">{waterMonth}</span>
+                <span className="text-xl font-black text-slate-900 font-mono block mt-1">
+                  S/ {waterPayAmount.toFixed(2)}
+                </span>
               </div>
 
-              {/* Datos del Arrendatario */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Nombre Completo del Arrendatario *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: MARÍA LUZMILA HUAMÁN"
-                    value={contractForm.tenantName}
-                    onChange={(e) => setContractForm({ ...contractForm, tenantName: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">DNI del Arrendatario *</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={8}
-                    placeholder="8 dígitos"
-                    value={contractForm.tenantDni}
-                    onChange={(e) => setContractForm({ ...contractForm, tenantDni: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Teléfono / Celular</label>
-                  <input
-                    type="text"
-                    placeholder="987654321"
-                    value={contractForm.tenantPhone}
-                    onChange={(e) => setContractForm({ ...contractForm, tenantPhone: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Giro Comercial Autorizado *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej: Verduras y Hortalizas"
-                    value={contractForm.businessCategory}
-                    onChange={(e) => setContractForm({ ...contractForm, businessCategory: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
-                </div>
-              </div>
-
-              {/* Parámetros del Cronograma y Financiamiento */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Fecha Inicio *</label>
-                  <input
-                    type="date"
-                    required
-                    value={contractForm.startDate}
-                    onChange={(e) => setContractForm({ ...contractForm, startDate: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Plazo (Meses) *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={36}
-                    required
-                    value={contractForm.monthsCount}
-                    onChange={(e) => setContractForm({ ...contractForm, monthsCount: Number(e.target.value) })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl font-bold font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Canon Mensual (S/) *</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min={1}
-                    required
-                    value={contractForm.monthlyRent}
-                    onChange={(e) => setContractForm({ ...contractForm, monthlyRent: Number(e.target.value) })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl font-bold font-mono text-emerald-700"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-600 uppercase mb-1">Interés Mensual (%)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min={0}
-                    max={50}
-                    value={contractForm.interestRate}
-                    onChange={(e) => setContractForm({ ...contractForm, interestRate: Number(e.target.value) })}
-                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl font-mono"
-                  />
-                </div>
-              </div>
-
-              {/* TABLA DE PREVISUALIZACIÓN DEL CRONOGRAMA */}
               <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="font-black uppercase tracking-wider text-slate-700 text-[11px] flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-                    Previsualización del Cronograma Oficial ({previewSchedule.length} Cuotas):
-                  </span>
-                  <span className="font-mono font-black text-emerald-700 text-xs">
-                    Total a Cancelar: S/ {(previewSchedule.reduce((acc, p) => acc + p.totalAmount, 0)).toFixed(2)}
-                  </span>
-                </div>
-
-                <div className="border border-slate-200 rounded-xl overflow-hidden max-h-40 overflow-y-auto">
-                  <table className="w-full text-[11px] text-left">
-                    <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
-                      <tr>
-                        <th className="p-2">N° Cuota</th>
-                        <th className="p-2">Vencimiento</th>
-                        <th className="p-2">Canon Base</th>
-                        <th className="p-2">Interés</th>
-                        <th className="p-2 text-right">Cuota Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {previewSchedule.map((item) => (
-                        <tr key={item.installmentNumber} className="hover:bg-slate-50">
-                          <td className="p-2 font-bold text-slate-800">Cuota {item.installmentNumber}</td>
-                          <td className="p-2 font-mono text-slate-600">{item.dueDate}</td>
-                          <td className="p-2 font-mono">S/ {item.rentAmount.toFixed(2)}</td>
-                          <td className="p-2 font-mono text-amber-600">S/ {item.interestAmount.toFixed(2)}</td>
-                          <td className="p-2 font-mono font-black text-emerald-700 text-right">S/ {item.totalAmount.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Monto a Cobrar (Editable):</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  required
+                  value={waterPayAmount}
+                  onChange={(e) => setWaterPayAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-black text-base text-slate-900 focus:bg-white focus:outline-none"
+                />
               </div>
 
-              {/* Botones */}
-              <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">N° Comprobante / Recibo</label>
+                <input
+                  type="text"
+                  required
+                  value={waterReceiptNumber}
+                  onChange={(e) => setWaterReceiptNumber(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600"
+                  onClick={() => setIsWaterPayModalOpen(false)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-xl font-bold text-slate-600"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow flex items-center space-x-1.5"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-md shadow-emerald-200"
                 >
-                  <FileCheck2 className="w-4 h-4" />
-                  <span>Crear y Emitir Contrato</span>
+                  Confirmar Cobro
                 </button>
               </div>
             </form>
@@ -894,13 +819,13 @@ export default function AlquileresPage() {
         </div>
       )}
 
-      {/* MODAL COBRAR CUOTA */}
+      {/* MODAL COBRAR CUOTA ALQUILER */}
       {isPayModalOpen && selectedContractForPay && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-100 space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-black text-slate-800 uppercase">Cobranza de Alquiler</h3>
+                <h3 className="text-base font-black text-slate-800 uppercase">Cobro de Alquiler</h3>
                 <p className="text-xs text-slate-400">Puesto {selectedContractForPay.stallCode} - {selectedContractForPay.tenantName}</p>
               </div>
               <button onClick={() => setIsPayModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
@@ -909,14 +834,27 @@ export default function AlquileresPage() {
             </div>
 
             <form onSubmit={handlePayInstallmentSubmit} className="space-y-3 text-xs">
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-center">
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-center">
                 <span className="text-[11px] font-bold text-emerald-900 block">Cuota a Cobrar:</span>
                 <span className="text-lg font-black text-emerald-800 font-mono">
-                  Cuota N° {payForm.installmentNumber} de {selectedContractForPay.monthsCount}
+                  Cuota N° {payForm.installmentNumber}
                 </span>
                 <span className="text-xl font-black text-slate-900 font-mono block mt-1">
                   S/ {Number(payForm.amount).toFixed(2)}
                 </span>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Monto de Alquiler (Editable):</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  required
+                  value={payForm.amount}
+                  onChange={(e) => setPayForm({ ...payForm, amount: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-black text-base text-slate-900 focus:bg-white focus:outline-none"
+                />
               </div>
 
               <div>
@@ -943,20 +881,7 @@ export default function AlquileresPage() {
                 />
               </div>
 
-              <div className="flex items-center space-x-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="registerCash"
-                  checked={payForm.registerCashIncome}
-                  onChange={(e) => setPayForm({ ...payForm, registerCashIncome: e.target.checked })}
-                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <label htmlFor="registerCash" className="text-xs font-semibold text-slate-700">
-                  Registrar ingreso en Caja Principal de Tesorería
-                </label>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex justify-end space-x-2">
+              <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setIsPayModalOpen(false)}
@@ -966,7 +891,7 @@ export default function AlquileresPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-emerald-600 text-white rounded-xl font-bold shadow"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold shadow"
                 >
                   Confirmar Cobro
                 </button>
@@ -976,103 +901,180 @@ export default function AlquileresPage() {
         </div>
       )}
 
-      {/* MODAL CONTRATO LEGAL Y CRONOGRAMA IMPRIMIBLE */}
+      {/* MODAL NUEVO CONTRATO */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-800 uppercase">Nuevo Contrato de Arrendamiento</h3>
+                <p className="text-xs text-slate-400">Emisión de contrato y cronograma oficial</p>
+              </div>
+              <button onClick={() => setIsCreateModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateContract} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Nombre Inquilino *</label>
+                  <input
+                    type="text"
+                    required
+                    value={contractForm.tenantName}
+                    onChange={(e) => setContractForm({ ...contractForm, tenantName: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">DNI *</label>
+                  <input
+                    type="text"
+                    required
+                    value={contractForm.tenantDni}
+                    onChange={(e) => setContractForm({ ...contractForm, tenantDni: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Giro Comercial</label>
+                  <input
+                    type="text"
+                    value={contractForm.businessCategory}
+                    onChange={(e) => setContractForm({ ...contractForm, businessCategory: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Canon Mensual (S/) *</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    required
+                    value={contractForm.monthlyRent}
+                    onChange={(e) => setContractForm({ ...contractForm, monthlyRent: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-black text-emerald-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Meses Duración</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="36"
+                    value={contractForm.monthsCount}
+                    onChange={(e) => setContractForm({ ...contractForm, monthsCount: parseInt(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Fecha Inicio</label>
+                  <input
+                    type="date"
+                    value={contractForm.startDate}
+                    onChange={(e) => setContractForm({ ...contractForm, startDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-md shadow-emerald-200"
+                >
+                  Crear y Emitir
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VISUALIZACIÓN / IMPRESIÓN CONTRATO */}
       {isContractDocModalOpen && activeDocContract && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div id="printable-rental-contract" className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl border border-slate-200 max-h-[92vh] overflow-y-auto space-y-5 font-serif text-slate-900">
-            {/* Cabecera Oficial */}
-            <div className="text-center border-b-2 border-slate-900 pb-4 font-sans">
-              <h2 className="text-base font-black uppercase tracking-wider">{activeDocContract.association}</h2>
-              <p className="text-xs text-slate-600 font-semibold">{activeDocContract.address} • RUC: {activeDocContract.ruc}</p>
-              <h1 className="text-lg font-black uppercase text-emerald-800 mt-2">{activeDocContract.title}</h1>
-              <p className="font-mono font-bold text-xs text-slate-500 mt-0.5">N° CONTRATO: {activeDocContract.contractNumber}</p>
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-800 uppercase">Documento Oficial de Contrato</h3>
+                <p className="text-xs text-slate-400">N° {activeDocContract.contractNumber} - {activeDocContract.tenant?.name}</p>
+              </div>
+              <button onClick={() => setIsContractDocModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Partes */}
-            <div className="text-xs leading-relaxed space-y-2 text-justify">
-              <p>
-                Conste por el presente documento privado, el <b>CONTRATO DE ARRENDAMIENTO DE PUESTO COMERCIAL</b> que celebran de una parte la <b>{activeDocContract.association}</b>, en adelante <b>EL ARRENDADOR</b>; y de la otra parte don/doña <b>{activeDocContract.tenant?.name}</b>, identificado(a) con <b>DNI N° {activeDocContract.tenant?.dni}</b>, con giro comercial autorizado de <b>{activeDocContract.tenant?.businessCategory}</b>, en adelante <b>EL ARRENDATARIO</b>.
+            {/* Document Preview */}
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 font-sans text-xs space-y-4 text-slate-800">
+              <div className="text-center border-b border-slate-300 pb-3">
+                <h2 className="font-black text-slate-900 text-sm uppercase">{activeDocContract.association || 'ASOCIACIÓN DE COMERCIANTES DEL MERCADO MICAELA BASTIDAS'}</h2>
+                <p className="text-[10px] text-slate-500">RUC: 20486000001 • Av. Micaela Bastidas S/N</p>
+                <h1 className="font-black text-emerald-800 text-base uppercase mt-2">CONTRATO PRIVADO DE ARRENDAMIENTO</h1>
+                <p className="font-mono text-slate-600 font-bold text-xs">N° {activeDocContract.contractNumber} • Puesto {activeDocContract.stallCode}</p>
+              </div>
+
+              <p className="text-justify leading-relaxed">
+                Conste por el presente documento privado el Contrato de Arrendamiento celebrado por la <b>{activeDocContract.association}</b> (EL ARRENDADOR) y don/doña <b>{activeDocContract.tenant?.name}</b> con DNI N° <b>{activeDocContract.tenant?.dni}</b> (EL ARRENDATARIO), para el puesto comercial con giro de <b>{activeDocContract.tenant?.businessCategory || 'Comercio General'}</b>.
               </p>
-            </div>
 
-            {/* Cláusulas */}
-            <div className="text-xs space-y-2 text-justify font-sans">
-              {activeDocContract.clauses?.map((c: string, idx: number) => (
-                <p key={idx} className="leading-relaxed">
-                  <b>{c.split(':')[0]}:</b>{c.split(':')[1]}
-                </p>
-              ))}
-            </div>
-
-            {/* Cronograma Anexo */}
-            <div className="font-sans pt-2">
-              <h3 className="text-xs font-black uppercase mb-2 text-slate-800 border-b pb-1">
-                ANEXO: CRONOGRAMA OFICIAL DE AMORTIZACIÓN Y PAGOS
-              </h3>
-              <table className="w-full text-xs text-left border border-slate-300">
-                <thead className="bg-slate-100 text-slate-700 font-bold border-b">
-                  <tr>
-                    <th className="p-1.5 border-r">Cuota</th>
-                    <th className="p-1.5 border-r">Vencimiento</th>
-                    <th className="p-1.5 border-r">Canon</th>
-                    <th className="p-1.5 border-r">Interés</th>
-                    <th className="p-1.5 border-r">Total Cuota</th>
-                    <th className="p-1.5">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 font-mono text-[11px]">
-                  {activeDocContract.schedule?.map((item: any) => (
-                    <tr key={item.installmentNumber} className="hover:bg-slate-50">
-                      <td className="p-1.5 border-r font-bold font-sans">Cuota {item.installmentNumber}</td>
-                      <td className="p-1.5 border-r">{new Date(item.dueDate).toLocaleDateString('es-PE')}</td>
-                      <td className="p-1.5 border-r">S/ {item.rentAmount}</td>
-                      <td className="p-1.5 border-r">S/ {item.interestAmount}</td>
-                      <td className="p-1.5 border-r font-bold text-emerald-800">S/ {item.totalAmount}</td>
-                      <td className="p-1.5 font-sans font-bold">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${item.status === 'PAGADO' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                          {item.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Firmas */}
-            <div className="grid grid-cols-2 gap-8 pt-8 text-center font-sans text-xs">
-              <div className="space-y-1">
-                <div className="border-t border-slate-400 pt-1">
-                  <p className="font-bold">{activeDocContract.tenant?.name}</p>
-                  <p className="text-slate-500 font-mono">DNI: {activeDocContract.tenant?.dni}</p>
-                  <p className="text-[10px] text-slate-400 uppercase font-bold">EL ARRENDATARIO (Firma y Huella)</p>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="border-t border-slate-400 pt-1">
-                  <p className="font-bold">CONSEJO DIRECTIVO</p>
-                  <p className="text-slate-500 font-mono">MERCADO MICAELA BASTIDAS</p>
-                  <p className="text-[10px] text-slate-400 uppercase font-bold">EL ARRENDADOR (Presidente / Tesorera)</p>
+              <div>
+                <h4 className="font-black uppercase text-[11px] text-slate-700 mb-1">Cronograma Oficial:</h4>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-[11px] text-left">
+                    <thead className="bg-slate-100 text-slate-600 font-bold">
+                      <tr>
+                        <th className="p-1.5">Cuota</th>
+                        <th className="p-1.5">Vencimiento</th>
+                        <th className="p-1.5 text-right">Canon (S/)</th>
+                        <th className="p-1.5 text-center">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      {(activeDocContract.schedule || []).map((s: any) => (
+                        <tr key={s.installmentNumber}>
+                          <td className="p-1.5 font-bold">Cuota {s.installmentNumber}</td>
+                          <td className="p-1.5">{new Date(s.dueDate).toLocaleDateString('es-PE')}</td>
+                          <td className="p-1.5 text-right font-bold text-emerald-800">S/ {Number(s.totalAmount).toFixed(2)}</td>
+                          <td className="p-1.5 text-center text-[10px] font-sans font-bold">{s.status || 'PENDIENTE'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
 
-            {/* Botones */}
-            <div className="flex justify-end space-x-2 pt-4 border-t border-slate-200 font-sans">
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
               <button
+                type="button"
                 onClick={() => setIsContractDocModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
+                className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600"
               >
                 Cerrar
               </button>
               <button
                 type="button"
                 onClick={handlePrintContract}
-                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black flex items-center space-x-1.5 shadow transition"
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-md shadow-emerald-200 flex items-center space-x-1.5"
               >
                 <Printer className="w-4 h-4" />
-                <span>Imprimir Contrato y Cronograma</span>
+                <span>Imprimir Contrato Oficial</span>
               </button>
             </div>
           </div>

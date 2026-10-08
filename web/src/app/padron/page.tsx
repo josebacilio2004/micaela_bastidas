@@ -76,6 +76,11 @@ export default function PadronPage() {
   const [newDocFile, setNewDocFile] = useState<File | null>(null);
   const [previewDoc, setPreviewDoc] = useState<any>(null);
 
+  // Modal Padrón de Asamblea (Formato Imprimible / Excel)
+  const [showAssemblyModal, setShowAssemblyModal] = useState(false);
+  const [assemblyTitle, setAssemblyTitle] = useState('ASAMBLEA GENERAL EXTRAORDINARIA');
+  const [assemblyDate, setAssemblyDate] = useState('04-02-2022');
+
   // Create modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -348,6 +353,40 @@ export default function PadronPage() {
     }
   };
 
+  const exportAssemblyExcel = () => {
+    const socios = merchants
+      .filter((m) => m.merchantType?.code === 'SOCIO')
+      .sort((a, b) => {
+        const condA = a.memberCondition === 'SOCIO_REGULAR' ? 0 : 1;
+        const condB = b.memberCondition === 'SOCIO_REGULAR' ? 0 : 1;
+        if (condA !== condB) return condA - condB;
+        const nameA = `${a.lastName || ''} ${a.firstName || ''}`.trim();
+        const nameB = `${b.lastName || ''} ${b.firstName || ''}`.trim();
+        return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+      });
+
+    let csvContent = '\uFEFF';
+    csvContent += 'ASOCIACIÓN DE PEQUEÑOS COMERCIANTES DEL MERCADO DE ABASTOS\r\n';
+    csvContent += '"MICAELA BASTIDAS"\r\n';
+    csvContent += `PADRÓN DE SOCIOS ASISTENTES A LA ${assemblyTitle}       ${assemblyDate}\r\n\r\n`;
+    csvContent += 'N°;APELLIDOS Y NOMBRES;DNI;CONDICION;FIRMA;HUELLA\r\n';
+
+    socios.forEach((s, idx) => {
+      const cond = s.memberCondition === 'SOCIO_REGULAR' ? 'TITULAR' : 'EN PRUEBA';
+      const fullName = `${s.lastName || ''} ${s.firstName || ''}`.trim();
+      csvContent += `${idx + 1};${fullName};${s.dni};${cond};;\r\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `PADRON_ASAMBLEA_${assemblyDate.replace(/[^a-zA-Z0-9]/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const openRequerimientoModal = async (merchant: any) => {
     setLoadingRequerimiento(true);
     try {
@@ -544,7 +583,7 @@ export default function PadronPage() {
             body * {
               visibility: hidden !important;
             }
-            #printable-carnet, #printable-carnet *, #printable-requerimiento, #printable-requerimiento * {
+            #printable-carnet, #printable-carnet *, #printable-requerimiento, #printable-requerimiento *, #printable-asamblea, #printable-asamblea * {
               visibility: visible !important;
             }
             #printable-carnet {
@@ -566,6 +605,15 @@ export default function PadronPage() {
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
+            #printable-asamblea {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              background: white !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
           }
         `,
         }}
@@ -579,7 +627,14 @@ export default function PadronPage() {
             Clasificación oficial en <b>Socios (107)</b>, <b>Inquilinos</b> y <b>Ambulantes</b> • Orden alfabético estricto • Trazabilidad con DNI y Recibos
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowAssemblyModal(true)}
+            className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
+          >
+            <Printer className="w-4 h-4 text-emerald-400" />
+            <span>Padrón Asamblea (Imprimir / Excel)</span>
+          </button>
           <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
@@ -2532,6 +2587,190 @@ export default function PadronPage() {
               >
                 Cerrar Visor
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Padrón Oficial para Asambleas (Impresión A4 / Excel) */}
+      {showAssemblyModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header no imprimible */}
+            <div className="p-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <Printer className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-black text-sm uppercase">Padrón Oficial de Socios para Asamblea</h3>
+                  <p className="text-[11px] text-slate-400">Formato A4 con cuadrículas para firmas y huellas dactilares</p>
+                </div>
+              </div>
+
+              {/* Controles de Configuración */}
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={assemblyTitle}
+                  onChange={(e) => setAssemblyTitle(e.target.value)}
+                  placeholder="Tipo de asamblea..."
+                  className="px-2.5 py-1 text-xs bg-slate-800 text-white border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500 font-bold"
+                  title="Título de la asamblea"
+                />
+                <input
+                  type="text"
+                  value={assemblyDate}
+                  onChange={(e) => setAssemblyDate(e.target.value)}
+                  placeholder="Fecha (DD-MM-AAAA)..."
+                  className="px-2.5 py-1 text-xs bg-slate-800 text-white border border-slate-700 rounded-lg focus:outline-none focus:border-emerald-500 font-bold w-28 text-center"
+                  title="Fecha de la asamblea"
+                />
+                <button
+                  type="button"
+                  onClick={exportAssemblyExcel}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow transition"
+                  title="Descargar padrón en Excel (.csv)"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Excel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow transition"
+                  title="Imprimir documento en A4"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Imprimir A4</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAssemblyModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Documento Imprimible Neto */}
+            <div className="p-6 md:p-10 overflow-y-auto flex-1 bg-white text-slate-900">
+              <div id="printable-asamblea" className="bg-white max-w-3xl mx-auto space-y-4">
+                {/* Membrete Institucional Oficial */}
+                <div className="text-center space-y-1 pb-2 border-b-2 border-slate-900">
+                  <h2 className="text-base font-black uppercase tracking-wider text-slate-900">
+                    ASOCIACIÓN DE PEQUEÑOS COMERCIANTES DEL MERCADO DE ABASTOS
+                  </h2>
+                  <h3 className="text-lg font-black tracking-widest text-slate-900">
+                    “MICAELA BASTIDAS”
+                  </h3>
+                  <div className="text-xs font-black uppercase tracking-wide bg-slate-100 py-1 px-3 rounded mt-1 border border-slate-300 inline-block">
+                    PADRÓN DE SOCIOS ASISTENTES A LA {assemblyTitle} &nbsp;&nbsp;&nbsp;&nbsp; {assemblyDate}
+                  </div>
+                </div>
+
+                {/* Subsección 1: Socios Titulares (1 al 88) */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between text-xs font-black uppercase bg-slate-200 px-3 py-1 rounded">
+                    <span>I. SOCIOS TITULARES / FUNDADORES (N° 1 al 88)</span>
+                    <span className="text-[10px] text-slate-600">88 Socios Titulares</span>
+                  </div>
+
+                  <table className="w-full text-[11px] border-collapse border border-slate-400">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-800 font-black uppercase">
+                        <th className="border border-slate-400 p-1.5 text-center w-10">N°</th>
+                        <th className="border border-slate-400 p-1.5 text-left">APELLIDOS Y NOMBRES</th>
+                        <th className="border border-slate-400 p-1.5 text-center w-24">DNI</th>
+                        <th className="border border-slate-400 p-1.5 text-center w-36">FIRMA</th>
+                        <th className="border border-slate-400 p-1.5 text-center w-28">HUELLA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {merchants
+                        .filter((m) => m.merchantType?.code === 'SOCIO' && m.memberCondition === 'SOCIO_REGULAR')
+                        .sort((a, b) => {
+                          const nameA = `${a.lastName || ''} ${a.firstName || ''}`.trim();
+                          const nameB = `${b.lastName || ''} ${b.firstName || ''}`.trim();
+                          return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+                        })
+                        .map((s, idx) => (
+                          <tr key={s.id} className="h-10 hover:bg-slate-50">
+                            <td className="border border-slate-400 p-1 text-center font-bold text-slate-700">
+                              {idx + 1}
+                            </td>
+                            <td className="border border-slate-400 p-1 font-bold uppercase text-slate-900">
+                              {s.lastName}, {s.firstName}
+                            </td>
+                            <td className="border border-slate-400 p-1 text-center font-mono font-bold text-slate-800">
+                              {s.dni}
+                            </td>
+                            <td className="border border-slate-400 p-1"></td>
+                            <td className="border border-slate-400 p-1"></td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Subsección 2: Socios en Prueba (89 al 107) */}
+                <div className="space-y-2 pt-4">
+                  <div className="flex items-center justify-between text-xs font-black uppercase bg-slate-200 px-3 py-1 rounded">
+                    <span>II. SOCIOS EN PRUEBA / CONDICIÓN ESPECIAL (N° 89 al 107)</span>
+                    <span className="text-[10px] text-slate-600">19 Socios en Prueba</span>
+                  </div>
+
+                  <table className="w-full text-[11px] border-collapse border border-slate-400">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-800 font-black uppercase">
+                        <th className="border border-slate-400 p-1.5 text-center w-10">N°</th>
+                        <th className="border border-slate-400 p-1.5 text-left">APELLIDOS Y NOMBRES</th>
+                        <th className="border border-slate-400 p-1.5 text-center w-24">DNI</th>
+                        <th className="border border-slate-400 p-1.5 text-center w-36">FIRMA</th>
+                        <th className="border border-slate-400 p-1.5 text-center w-28">HUELLA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {merchants
+                        .filter((m) => m.merchantType?.code === 'SOCIO' && m.memberCondition !== 'SOCIO_REGULAR')
+                        .sort((a, b) => {
+                          const nameA = `${a.lastName || ''} ${a.firstName || ''}`.trim();
+                          const nameB = `${b.lastName || ''} ${b.firstName || ''}`.trim();
+                          return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' });
+                        })
+                        .map((s, idx) => (
+                          <tr key={s.id} className="h-10 hover:bg-slate-50">
+                            <td className="border border-slate-400 p-1 text-center font-bold text-slate-700">
+                              {88 + idx + 1}
+                            </td>
+                            <td className="border border-slate-400 p-1 font-bold uppercase text-slate-900">
+                              {s.lastName}, {s.firstName}
+                            </td>
+                            <td className="border border-slate-400 p-1 text-center font-mono font-bold text-slate-800">
+                              {s.dni}
+                            </td>
+                            <td className="border border-slate-400 p-1"></td>
+                            <td className="border border-slate-400 p-1"></td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Firmas de la Mesa Directiva */}
+                <div className="pt-12 grid grid-cols-3 gap-6 text-center text-xs text-slate-800">
+                  <div className="space-y-1 border-t border-slate-600 pt-2">
+                    <p className="font-bold uppercase">Presidente(a)</p>
+                    <p className="text-[10px] text-slate-500">Consejo Directivo</p>
+                  </div>
+                  <div className="space-y-1 border-t border-slate-600 pt-2">
+                    <p className="font-bold uppercase">Secretario(a) de Actas</p>
+                    <p className="text-[10px] text-slate-500">Consejo Directivo</p>
+                  </div>
+                  <div className="space-y-1 border-t border-slate-600 pt-2">
+                    <p className="font-bold uppercase">Tesorero(a)</p>
+                    <p className="text-[10px] text-slate-500">Consejo Directivo</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

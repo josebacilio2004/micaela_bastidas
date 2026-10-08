@@ -78,6 +78,15 @@ export class CashflowService {
     });
     const loanCollectionsIncome = loanCollections.reduce((acc, lc) => acc + Number(lc.totalAmount || 0), 0);
 
+    // f) Otros Ingresos y Movimientos Extraordinarios de Caja
+    const cashMovementsIncome = await this.prisma.cashMovement.findMany({
+      where: {
+        type: CashMovementType.INGRESO,
+        ...(query?.startDate || query?.endDate ? { createdAt: dateFilter } : {}),
+      },
+    });
+    const extraordinaryIncome = cashMovementsIncome.reduce((acc, cm) => acc + Number(cm.amount || 0), 0);
+
     const totalIncome =
       alcabalaIncome +
       waterIncome +
@@ -86,7 +95,8 @@ export class CashflowService {
       advertisingIncome +
       loanCollectionsIncome +
       finesIncome +
-      otherPaymentsIncome;
+      otherPaymentsIncome +
+      extraordinaryIncome;
 
     // 2. EGRESOS
     // a) Planilla de Personal
@@ -193,7 +203,8 @@ export class CashflowService {
         loanCollections: Number(loanCollectionsIncome.toFixed(2)),
         revolvingFundCollections: Number(loanCollectionsIncome.toFixed(2)),
         fines: Number(finesIncome.toFixed(2)),
-        others: Number(otherPaymentsIncome.toFixed(2)),
+        others: Number((otherPaymentsIncome + extraordinaryIncome).toFixed(2)),
+        extraordinaryIncome: Number(extraordinaryIncome.toFixed(2)),
       },
       expenseBreakdown: {
         payroll: Number(payrollExpense.toFixed(2)),
@@ -453,7 +464,7 @@ export class CashflowService {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [payments, expenses, sshhSessions, rentalInstallments, loanCollections, staffPayments] =
+    const [payments, expenses, sshhSessions, rentalInstallments, loanCollections, staffPayments, cashMovements] =
       await Promise.all([
         this.prisma.payment.findMany({
           where: { paidAt: { gte: startOfDay, lte: endOfDay } },
@@ -475,6 +486,9 @@ export class CashflowService {
         this.prisma.staffPayment.findMany({
           where: { paymentDate: { gte: startOfDay, lte: endOfDay } },
           include: { staffMember: true },
+        }),
+        this.prisma.cashMovement.findMany({
+          where: { createdAt: { gte: startOfDay, lte: endOfDay } },
         }),
       ]);
 
@@ -558,6 +572,23 @@ export class CashflowService {
         amount: Number(sp.amount),
         reference: sp.receiptNumber || `PLAN-${sp.period}`,
       });
+    }
+
+    // Movimientos extraordinarios de Caja (Otros Ingresos y Egresos manuales)
+    for (const cm of cashMovements) {
+      // Evitar duplicar si es un egreso ya registrado como MarketExpense con la misma referencia
+      const isAlreadyExpense = expenses.some((e) => (e.documentNumber && e.documentNumber === cm.reference) || e.code === cm.reference);
+      if (!isAlreadyExpense) {
+        entries.push({
+          id: cm.id,
+          timestamp: cm.createdAt,
+          type: cm.type === CashMovementType.INGRESO ? 'INGRESO' : 'EGRESO',
+          category: cm.type === CashMovementType.INGRESO ? 'Otros Ingresos' : 'Otros Egresos de Caja',
+          description: cm.concept,
+          amount: Number(cm.amount),
+          reference: cm.reference || `MOV-${cm.id.slice(0, 8)}`,
+        });
+      }
     }
 
     // Ordenar cronológicamente

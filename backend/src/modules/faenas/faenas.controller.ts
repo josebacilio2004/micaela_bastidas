@@ -65,9 +65,30 @@ export class FaenasController {
     return this.faenasService.registerAttendance(id, body.dniOrCode, user?.id);
   }
 
+  @Post(':id/toggle-attendance')
+  @ApiOperation({ summary: 'Alternar asistencia individual a faena' })
+  async toggleAttendance(
+    @Param('id') id: string,
+    @Body() body: { merchantId: string; present: boolean },
+    @CurrentUser() user: any,
+  ) {
+    return this.faenasService.toggleAttendance(id, body.merchantId, body.present, user?.id);
+  }
+
+  @Post(':id/bulk-attendance')
+  @ApiOperation({ summary: 'Actualizar asistencias a faena en lote' })
+  async bulkAttendance(
+    @Param('id') id: string,
+    @Body() body: { items: { merchantId: string; present: boolean }[] },
+    @CurrentUser() user: any,
+  ) {
+    return this.faenasService.bulkUpdateAttendance(id, body.items, user?.id);
+  }
+
   @Post(':id/finalize')
   @ApiOperation({ summary: 'Finalizar faena y aplicar multas automáticas a socios ausentes' })
   async finalize(@Param('id') id: string) {
     return this.faenasService.finalizeFaena(id);
   }
 }
+

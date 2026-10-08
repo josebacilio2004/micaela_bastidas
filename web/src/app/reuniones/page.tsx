@@ -8,6 +8,7 @@ import {
   Coins,
   Users,
   CheckCircle2,
+  CheckSquare,
   UserCheck,
   UserX,
   Plus,
@@ -24,12 +25,23 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
+function formatDateNoTimezone(dateStr?: string | Date) {
+  if (!dateStr) return '';
+  const s = typeof dateStr === 'string' ? dateStr : dateStr.toISOString();
+  const datePart = s.split('T')[0];
+  const parts = datePart.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return datePart;
+}
+
 export default function ReunionesPage() {
   const [meetings, setMeetings] = useState<any[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>('');
   const [meetingDetail, setMeetingDetail] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'PRESENTES' | 'AUSENTES' | 'MULTAS'>('PRESENTES');
+  const [activeTab, setActiveTab] = useState<'GRID' | 'PRESENTES' | 'AUSENTES' | 'MULTAS'>('GRID');
   // Fines state
   const [finesList, setFinesList] = useState<any[]>([]);
   const [loadingFines, setLoadingFines] = useState(false);
@@ -264,6 +276,41 @@ export default function ReunionesPage() {
     }
   };
 
+  const handleToggleAttendance = async (merchantId: string, currentPresent: boolean) => {
+    if (!selectedMeetingId) return;
+    try {
+      await apiRequest(`/meetings/${selectedMeetingId}/toggle-attendance`, {
+        method: 'POST',
+        body: JSON.stringify({ merchantId, present: !currentPresent }),
+      });
+      await fetchMeetingDetail(selectedMeetingId);
+    } catch (err: any) {
+      alert(err.message || 'Error al actualizar asistencia');
+    }
+  };
+
+  const handleBulkAttendance = async (markAllPresent: boolean) => {
+    const socios = meetingDetail?.allSocios || [];
+    if (!selectedMeetingId || !socios.length) return;
+    const confirmMsg = markAllPresent
+      ? `¿Marcar a todos los ${socios.length} socios como PRESENTES en esta asamblea?`
+      : '¿Marcar a todos los socios como AUSENTES en esta asamblea?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      const items = socios.map((s: any) => ({
+        merchantId: s.id,
+        present: markAllPresent,
+      }));
+      await apiRequest(`/meetings/${selectedMeetingId}/bulk-attendance`, {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+      });
+      await fetchMeetingDetail(selectedMeetingId);
+    } catch (err: any) {
+      alert(err.message || 'Error al actualizar asistencia en bloque');
+    }
+  };
+
   const attendedList = meetingDetail?.attended || meetingDetail?.attendances || [];
   const absentList = meetingDetail?.absent || [];
   const quorum = meetingDetail?.quorum || {
@@ -273,6 +320,23 @@ export default function ReunionesPage() {
     quorumPercentage: 0,
     hasQuorum: false,
   };
+
+  const filteredSociosGrid = useMemo(() => {
+    const list = meetingDetail?.allSocios || [];
+    return list
+      .filter((s: any) => {
+        const q = searchTerm.toLowerCase();
+        const fullName = `${s.lastName || ''} ${s.firstName || ''}`.toLowerCase();
+        const dni = (s.dni || '').toLowerCase();
+        const stall = (s.stall?.code || '').toLowerCase();
+        return fullName.includes(q) || dni.includes(q) || stall.includes(q);
+      })
+      .sort((a: any, b: any) => {
+        const aName = `${a.lastName || ''} ${a.firstName || ''}`;
+        const bName = `${b.lastName || ''} ${b.firstName || ''}`;
+        return aName.localeCompare(bName, 'es');
+      });
+  }, [meetingDetail?.allSocios, searchTerm]);
 
   // Alphabetical sort: lastName, firstName
   const filteredAttended = useMemo(() => {
@@ -471,7 +535,7 @@ export default function ReunionesPage() {
                 />
                 <span>{m.title}</span>
                 <span className="opacity-70 font-mono text-[10px]">
-                  ({new Date(m.date).toLocaleDateString('es-PE')})
+                  ({formatDateNoTimezone(m.date)})
                 </span>
               </button>
             );
@@ -544,7 +608,7 @@ export default function ReunionesPage() {
                 <div className="flex flex-wrap gap-y-1 gap-x-3 text-xs text-slate-500 mt-2">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    {new Date(meetingDetail.date).toLocaleDateString('es-PE')}
+                    {formatDateNoTimezone(meetingDetail.date)}
                   </span>
                   <span className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -682,14 +746,25 @@ export default function ReunionesPage() {
               </form>
             </div>
 
-            {/* Attendance Tabs: Presentes vs Ausentes */}
+            {/* Attendance Tabs: Grid vs Presentes vs Ausentes vs Multas */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               {/* Tab Header */}
-              <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex gap-2">
+              <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2 items-center">
+                  <button
+                    onClick={() => setActiveTab('GRID')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                      activeTab === 'GRID'
+                        ? 'bg-emerald-700 text-white shadow-sm'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    Cuadrícula de Socios ({meetingDetail?.allSocios?.length || 107})
+                  </button>
                   <button
                     onClick={() => setActiveTab('PRESENTES')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                       activeTab === 'PRESENTES'
                         ? 'bg-emerald-600 text-white shadow-sm'
                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -700,27 +775,60 @@ export default function ReunionesPage() {
                   </button>
                   <button
                     onClick={() => setActiveTab('AUSENTES')}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                       activeTab === 'AUSENTES'
                         ? 'bg-slate-800 text-white shadow-sm'
                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     <UserX className="w-3.5 h-3.5" />
-                    Ausentes / Pendientes ({absentList.length})
+                    Ausentes ({absentList.length})
                   </button>
+                  {meetingDetail.status === 'FINALIZADA' && (
+                    <button
+                      onClick={() => setActiveTab('MULTAS')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                        activeTab === 'MULTAS'
+                          ? 'bg-rose-700 text-white shadow-sm'
+                          : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
+                      }`}
+                    >
+                      <Coins className="w-3.5 h-3.5" />
+                      Multas ({finesList.length})
+                    </button>
+                  )}
                 </div>
 
-                {/* Filter input */}
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                  <input
-                    type="text"
-                    placeholder="Buscar por DNI o socio..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg w-full sm:w-56 focus:outline-none focus:border-emerald-500"
-                  />
+                {/* Search & Bulk actions */}
+                <div className="flex items-center gap-2">
+                  {activeTab === 'GRID' && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleBulkAttendance(true)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-sm transition"
+                        title="Marcar a todos como presentes"
+                      >
+                        ✓ Todos Presentes
+                      </button>
+                      <button
+                        onClick={() => handleBulkAttendance(false)}
+                        className="bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 shadow-sm transition"
+                        title="Marcar a todos como ausentes"
+                      >
+                        ✗ Desmarcar Todos
+                      </button>
+                    </div>
+                  )}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Buscar socio, DNI..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg w-full sm:w-48 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -817,10 +925,107 @@ export default function ReunionesPage() {
                                 )}
                               </td>
                               <td className="py-2.5 px-4 text-slate-500 font-mono text-[11px]">
-                                {f.dueDate ? new Date(f.dueDate).toLocaleDateString('es-PE') : '-'}
+                                {f.dueDate ? formatDateNoTimezone(f.dueDate) : '-'}
                               </td>
                             </tr>
                           ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {activeTab === 'GRID' && (
+                  <div>
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10 border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3 text-center w-12">N°</th>
+                          <th className="py-2.5 px-4">Socio Titular</th>
+                          <th className="py-2.5 px-3">DNI</th>
+                          <th className="py-2.5 px-3">Puesto / Giro</th>
+                          <th className="py-2.5 px-3">Condición</th>
+                          <th className="py-2.5 px-4 text-center">Asistencia (Cuadrícula)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredSociosGrid.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-10 text-center text-slate-400">
+                              No se encontraron socios con el término de búsqueda.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredSociosGrid.map((s: any, idx: number) => {
+                            const isPresent = Boolean(s.isPresent);
+                            return (
+                              <tr
+                                key={s.id}
+                                className={`transition cursor-pointer select-none ${
+                                  isPresent ? 'bg-emerald-50/50 hover:bg-emerald-50' : 'hover:bg-slate-50'
+                                }`}
+                                onClick={() => handleToggleAttendance(s.id, isPresent)}
+                              >
+                                <td className="py-2 px-3 text-center font-mono font-bold text-slate-400">
+                                  {idx + 1}
+                                </td>
+                                <td className="py-2 px-4">
+                                  <div className="font-bold text-slate-800">
+                                    {s.lastName}, {s.firstName}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 font-mono font-bold text-slate-600">
+                                  {s.dni}
+                                </td>
+                                <td className="py-2 px-3">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.5 bg-slate-200 text-slate-700 font-mono font-bold rounded text-[10px]">
+                                      {s.stall?.code || 'S/P'}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 truncate max-w-[120px]">
+                                      {s.businessCategory || s.stall?.giro || '-'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                      s.memberCondition === 'SOCIO_REGULAR'
+                                        ? 'bg-blue-100 text-blue-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}
+                                  >
+                                    {s.memberCondition === 'SOCIO_REGULAR' ? 'Titular' : 'En Prueba'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-4 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleAttendance(s.id, isPresent);
+                                    }}
+                                    className={`px-3 py-1 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 mx-auto transition shadow-sm ${
+                                      isPresent
+                                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-300'
+                                    }`}
+                                  >
+                                    {isPresent ? (
+                                      <>
+                                        <CheckCircle2 className="w-3.5 h-3.5 fill-current text-white" />
+                                        <span>PRESENTE</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Square className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>AUSENTE</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>

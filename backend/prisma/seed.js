@@ -1718,6 +1718,136 @@ async function main() {
         createdMerchants[m.internalCode] = merchant;
     }
     console.log('✓ 107 socios oficiales registrados con credenciales QR y puestos asignados');
+    // 9.1 CARGA DE LOS 8 INQUILINOS DEL MERCADO (Hoja C-ALQUILERES)
+    const officialInquilinos = [
+        { code: 'MB-INQ-00001', name: 'HUATARUNCO CHUQUILLANQUI BETZABE', dni: '40123001', rent: 170.00, stall: 'INQ-01', cat: 'Abarrotes y Varios' },
+        { code: 'MB-INQ-00002', name: 'MACHA CASALLO EDWIN', dni: '40123002', rent: 170.00, stall: 'INQ-02', cat: 'Verduras y Frutas' },
+        { code: 'MB-INQ-00003', name: 'GONZALO ASTO ROCIO', dni: '40123003', rent: 170.00, stall: 'INQ-03', cat: 'Comercio General' },
+        { code: 'MB-INQ-00004', name: 'OSCANOA RAMOS GINA PILAR', dni: '40123004', rent: 200.00, stall: 'INQ-04', cat: 'Carnicería / Aves' },
+        { code: 'MB-INQ-00005', name: 'SALVATIERRA HUAMANI EDGAR', dni: '40123005', rent: 400.00, stall: 'INQ-05', cat: 'Abarrotes Mayorista' },
+        { code: 'MB-INQ-00006', name: 'QUISPE QUISPE JUAN', dni: '40123006', rent: 400.00, stall: 'INQ-06', cat: 'Distribuidora Comercial' },
+        { code: 'MB-INQ-00007', name: 'MUÑOZ CARDENAS JAVIER', dni: '40123007', rent: 180.00, stall: 'INQ-07', cat: 'Comidas y Bebidas' },
+        { code: 'MB-INQ-00008', name: 'MIRANDA SOTO VICTORIA', dni: '40123008', rent: 150.00, stall: 'INQ-08', cat: 'Bazar y Plásticos' },
+    ];
+    for (const inq of officialInquilinos) {
+        const parts = inq.name.split(' ');
+        const firstName = parts.slice(2).join(' ') || parts[1] || inq.name;
+        const lastName = parts.slice(0, 2).join(' ') || parts[0];
+        const existing = await prisma.merchant.findFirst({ where: { OR: [{ dni: inq.dni }, { internalCode: inq.code }] } });
+        if (existing) {
+            await prisma.merchant.update({
+                where: { id: existing.id },
+                data: {
+                    internalCode: inq.code,
+                    qrCode: 'MB-QR-' + inq.dni,
+                    firstName,
+                    lastName,
+                    dni: inq.dni,
+                    merchantTypeId: createdTypes['INQUILINO'].id,
+                    memberCondition: client_1.MemberCondition.NO_APLICA,
+                    sectorId: createdSectors['SEC-B'].id,
+                    businessCategory: inq.cat,
+                    status: client_1.MerchantStatus.ACTIVO,
+                },
+            });
+        }
+        else {
+            await prisma.merchant.create({
+                data: {
+                    internalCode: inq.code,
+                    qrCode: 'MB-QR-' + inq.dni,
+                    firstName,
+                    lastName,
+                    dni: inq.dni,
+                    merchantTypeId: createdTypes['INQUILINO'].id,
+                    memberCondition: client_1.MemberCondition.NO_APLICA,
+                    sectorId: createdSectors['SEC-B'].id,
+                    businessCategory: inq.cat,
+                    status: client_1.MerchantStatus.ACTIVO,
+                },
+            });
+        }
+    }
+    console.log('✓ 8 Inquilinos oficiales registrados (MB-INQ-00001 al 00008)');
+    // 9.2 CARGA DE LOS 34 AMBULANTES FIJOS (Hoja ALCABALA FIJO)
+    const officialAmbulantesFijos = [
+        { code: 'MB-AF-00001', name: 'JUAN HUAMAN', cat: 'COMIDA' },
+        { code: 'MB-AF-00002', name: 'MARITZA CALIXTO', cat: 'COMIDA' },
+        { code: 'MB-AF-00003', name: 'ALBINA CARBAJAL', cat: 'FRUTA' },
+        { code: 'MB-AF-00004', name: 'MARTHA HUAMAN', cat: 'COMIDA' },
+        { code: 'MB-AF-00005', name: 'MARGARITA QUISPE', cat: 'COMIDA' },
+        { code: 'MB-AF-00006', name: 'ELSA PALOMINO', cat: 'COMIDA' },
+        { code: 'MB-AF-00007', name: 'ALFONSO DE LA CRUZ', cat: 'COMIDA' },
+        { code: 'MB-AF-00008', name: 'GLADYS VILLANUEVA', cat: 'COMIDA' },
+        { code: 'MB-AF-00009', name: 'FREDY HUAMAN', cat: 'CARNE' },
+        { code: 'MB-AF-00010', name: 'MARINA VILCAPOMA', cat: 'CARNE' },
+        { code: 'MB-AF-00011', name: 'MARIA PAQUIYAURI', cat: 'VARIOS' },
+        { code: 'MB-AF-00012', name: 'YOVANA ROJAS', cat: 'CARNE' },
+        { code: 'MB-AF-00013', name: 'EUGENIA ROJAS', cat: 'CARNE' },
+        { code: 'MB-AF-00014', name: 'LIDIA CHUPURGO', cat: 'CARNE' },
+        { code: 'MB-AF-00015', name: 'DELIA TAIPE', cat: 'CARNE' },
+        { code: 'MB-AF-00016', name: 'PABLO CORDOVA', cat: 'VERDURA' },
+        { code: 'MB-AF-00017', name: 'EVA ROJAS', cat: 'VARIOS' },
+        { code: 'MB-AF-00018', name: 'HILDA HUARI', cat: 'OTROS' },
+        { code: 'MB-AF-00019', name: 'VICTORIA ASTO', cat: 'OTROS' },
+        { code: 'MB-AF-00020', name: 'TEOFILA SUAZO', cat: 'PAPA' },
+        { code: 'MB-AF-00021', name: 'ISABEL SEDANO', cat: 'PAPA' },
+        { code: 'MB-AF-00022', name: 'LOURDES CASTILLON', cat: 'PAPA' },
+        { code: 'MB-AF-00023', name: 'MILA HILARIO', cat: 'PAPA' },
+        { code: 'MB-AF-00024', name: 'MAXIMO HILARIO', cat: 'PAPA' },
+        { code: 'MB-AF-00025', name: 'ALEJANDRO PARI', cat: 'PAPA' },
+        { code: 'MB-AF-00026', name: 'DONATA PARI', cat: 'PAPA' },
+        { code: 'MB-AF-00027', name: 'JESUS PARI', cat: 'PAPA' },
+        { code: 'MB-AF-00028', name: 'HAYDEE QUISPE', cat: 'PAPA' },
+        { code: 'MB-AF-00029', name: 'SONIA ROJAS', cat: 'PAPA' },
+        { code: 'MB-AF-00030', name: 'JULIA LAURA', cat: 'PAPA' },
+        { code: 'MB-AF-00031', name: 'DINA MENDOZA', cat: 'PAPA' },
+        { code: 'MB-AF-00032', name: 'LIDIA PARIONA', cat: 'PAPA' },
+        { code: 'MB-AF-00033', name: 'ELVIRA ROJAS', cat: 'PAPA' },
+        { code: 'MB-AF-00034', name: 'FORTUNATA ROJAS', cat: 'PAPA' },
+    ];
+    for (let i = 0; i < officialAmbulantesFijos.length; i++) {
+        const af = officialAmbulantesFijos[i];
+        const dummyDni = (50000000 + i + 1).toString();
+        const parts = af.name.split(' ');
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ') || 'Ambulante';
+        const existing = await prisma.merchant.findFirst({ where: { OR: [{ dni: dummyDni }, { internalCode: af.code }] } });
+        if (existing) {
+            await prisma.merchant.update({
+                where: { id: existing.id },
+                data: {
+                    internalCode: af.code,
+                    qrCode: 'MB-QR-' + dummyDni,
+                    firstName,
+                    lastName,
+                    dni: dummyDni,
+                    merchantTypeId: createdTypes['AMBULANTE_FIJO'].id,
+                    memberCondition: client_1.MemberCondition.NO_APLICA,
+                    sectorId: createdSectors['SEC-C'].id,
+                    businessCategory: af.cat,
+                    status: client_1.MerchantStatus.ACTIVO,
+                },
+            });
+        }
+        else {
+            await prisma.merchant.create({
+                data: {
+                    internalCode: af.code,
+                    qrCode: 'MB-QR-' + dummyDni,
+                    firstName,
+                    lastName,
+                    dni: dummyDni,
+                    merchantTypeId: createdTypes['AMBULANTE_FIJO'].id,
+                    memberCondition: client_1.MemberCondition.NO_APLICA,
+                    sectorId: createdSectors['SEC-C'].id,
+                    businessCategory: af.cat,
+                    status: client_1.MerchantStatus.ACTIVO,
+                },
+            });
+        }
+    }
+    console.log('✓ 34 Ambulantes Fijos oficiales registrados (MB-AF-00001 al 00034)');
     // 10. Caja inicial de Tesorería (Abierta para hoy)
     const tesoreraUser = createdUsers['tesorera'];
     const today = new Date();

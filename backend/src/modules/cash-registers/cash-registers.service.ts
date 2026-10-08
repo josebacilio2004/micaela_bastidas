@@ -220,14 +220,26 @@ export class CashRegistersService {
   }
 
   async addMovement(id: string, dto: { type: CashMovementType; concept: string; amount: number; reference?: string }, userId: string) {
-    const register = await this.prisma.cashRegister.findUnique({ where: { id } });
+    let registerId = id;
+    if (id === 'current' || !id) {
+      const active = await this.prisma.cashRegister.findFirst({
+        where: { status: CashRegisterStatus.ABIERTO },
+        orderBy: { openedAt: 'desc' },
+      });
+      if (!active) {
+        throw new BadRequestException('No hay ninguna caja abierta actualmente en el sistema para registrar este movimiento.');
+      }
+      registerId = active.id;
+    }
+
+    const register = await this.prisma.cashRegister.findUnique({ where: { id: registerId } });
     if (!register || register.status !== CashRegisterStatus.ABIERTO) {
       throw new BadRequestException('No se pueden registrar movimientos en una caja que no esté abierta');
     }
 
     return this.prisma.cashMovement.create({
       data: {
-        cashRegisterId: id,
+        cashRegisterId: registerId,
         type: dto.type,
         concept: dto.concept,
         amount: dto.amount,

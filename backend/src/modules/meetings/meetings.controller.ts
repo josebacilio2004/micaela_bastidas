@@ -74,9 +74,30 @@ export class MeetingsController {
     return this.meetingsService.registerAttendance(meetingId, dto, userId);
   }
 
+  @Post(':id/toggle-attendance')
+  @ApiOperation({ summary: 'Alternar asistencia individual de socio' })
+  toggleAttendance(
+    @Param('id') meetingId: string,
+    @Body() dto: { merchantId: string; present: boolean },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.meetingsService.toggleAttendance(meetingId, dto.merchantId, dto.present, userId);
+  }
+
+  @Post(':id/bulk-attendance')
+  @ApiOperation({ summary: 'Actualizar asistencias en lote' })
+  bulkAttendance(
+    @Param('id') meetingId: string,
+    @Body() dto: { items: { merchantId: string; present: boolean }[] },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.meetingsService.bulkUpdateAttendance(meetingId, dto.items, userId);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Eliminar una asamblea programada' })
   delete(@Param('id') id: string) {
     return this.meetingsService.delete(id);
   }
 }
+

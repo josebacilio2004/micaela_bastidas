@@ -67,6 +67,18 @@ export default function FlujoCajaPage() {
     notes: '',
   });
 
+  // Modal Registrar Otro Ingreso
+  const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
+  const [submittingIncome, setSubmittingIncome] = useState(false);
+  const [incomeForm, setIncomeForm] = useState({
+    concept: '',
+    amount: '',
+    date: todayStr,
+    receiptNumber: '',
+    paymentMethod: 'EFECTIVO',
+    notes: '',
+  });
+
   // Modal Preview Voucher
   const [previewVoucherUrl, setPreviewVoucherUrl] = useState<string | null>(null);
 
@@ -216,6 +228,45 @@ export default function FlujoCajaPage() {
     }
   };
 
+  // Registrar Otro Ingreso
+  const handleCreateIncome = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(incomeForm.amount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Por favor ingrese un monto válido mayor a 0');
+      return;
+    }
+
+    try {
+      setSubmittingIncome(true);
+      await apiRequest('/cash-registers/current/movements', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'INGRESO',
+          concept: incomeForm.concept.trim(),
+          amount: amt,
+          reference: incomeForm.receiptNumber?.trim() || `ING-${Date.now().toString().slice(-6)}`,
+        }),
+      });
+
+      setIsIncomeModalOpen(false);
+      setIncomeForm({
+        concept: '',
+        amount: '',
+        date: todayStr,
+        receiptNumber: '',
+        paymentMethod: 'EFECTIVO',
+        notes: '',
+      });
+      alert('✓ Otro Ingreso registrado exitosamente en Caja y Flujo.');
+      loadAll();
+    } catch (err: any) {
+      alert(err.message || 'Error al registrar ingreso');
+    } finally {
+      setSubmittingIncome(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -248,6 +299,14 @@ export default function FlujoCajaPage() {
               className="font-bold text-slate-700 bg-transparent focus:outline-none"
             />
           </div>
+
+          <button
+            onClick={() => setIsIncomeModalOpen(true)}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-200 transition flex items-center space-x-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Registrar Otro Ingreso</span>
+          </button>
 
           <button
             onClick={() => setIsExpenseModalOpen(true)}
@@ -983,6 +1042,121 @@ export default function FlujoCajaPage() {
                 Cerrar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REGISTRAR OTRO INGRESO */}
+      {isIncomeModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-black text-slate-800 uppercase">Registrar Otro Ingreso Extraordinario</h3>
+                <p className="text-xs text-slate-400">Ingresos varios a caja física (alquiler de patio, eventos, multas, reciclaje, etc.)</p>
+              </div>
+              <button
+                onClick={() => setIsIncomeModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateIncome} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Concepto / Motivo de Ingreso *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Alquiler eventual de patio, Venta de cartón, Donación..."
+                  value={incomeForm.concept}
+                  onChange={(e) => setIncomeForm({ ...incomeForm, concept: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Monto en Soles (S/) *</label>
+                  <input
+                    type="number"
+                    step="0.50"
+                    min="0.50"
+                    required
+                    placeholder="0.00"
+                    value={incomeForm.amount}
+                    onChange={(e) => setIncomeForm({ ...incomeForm, amount: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-black text-emerald-800 text-base focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Fecha</label>
+                  <input
+                    type="date"
+                    required
+                    value={incomeForm.date}
+                    onChange={(e) => setIncomeForm({ ...incomeForm, date: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Medio de Pago</label>
+                  <select
+                    value={incomeForm.paymentMethod}
+                    onChange={(e) => setIncomeForm({ ...incomeForm, paymentMethod: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
+                  >
+                    <option value="EFECTIVO">Efectivo en Caja</option>
+                    <option value="YAPE">Yape / Plin</option>
+                    <option value="TRANSFERENCIA">Transferencia</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">N° Recibo / Comprobante</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: REC-0045"
+                    value={incomeForm.receiptNumber}
+                    onChange={(e) => setIncomeForm({ ...incomeForm, receiptNumber: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-slate-800 focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Observaciones (Opcional)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Detalles adicionales..."
+                  value={incomeForm.notes}
+                  onChange={(e) => setIncomeForm({ ...incomeForm, notes: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsIncomeModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingIncome}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black shadow-md shadow-emerald-200"
+                >
+                  {submittingIncome ? 'Registrando...' : 'Ingresar a Caja'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

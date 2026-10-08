@@ -86,6 +86,7 @@ export class MeetingsService {
       totalEligible: totalSocios,
       attended: sortedAttendances,
       absent: absentMerchants,
+      allSocios: allSocios.map((s) => ({ ...s, isPresent: attendedMerchantIds.has(s.id) })),
       quorum: {
         totalSocios,
         attendedCount,
@@ -97,10 +98,12 @@ export class MeetingsService {
   }
 
   async create(dto: { title: string; date: string; time: string; location: string; description?: string; status?: MeetingStatus }, userId: string) {
+    const dStr = (dto.date || '').split('T')[0];
+    const dateObj = dStr ? new Date(`${dStr}T12:00:00.000Z`) : new Date();
     return this.prisma.meeting.create({
       data: {
         title: dto.title,
-        date: new Date(dto.date),
+        date: dateObj,
         time: dto.time,
         location: dto.location,
         description: dto.description,
@@ -116,7 +119,10 @@ export class MeetingsService {
 
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
-    if (dto.date !== undefined) data.date = new Date(dto.date);
+    if (dto.date !== undefined) {
+      const dStr = (dto.date || '').split('T')[0];
+      data.date = dStr ? new Date(`${dStr}T12:00:00.000Z`) : new Date();
+    }
     if (dto.time !== undefined) data.time = dto.time;
     if (dto.location !== undefined) data.location = dto.location;
     if (dto.description !== undefined) data.description = dto.description;
@@ -125,6 +131,56 @@ export class MeetingsService {
       where: { id },
       data,
     });
+  }
+
+  async toggleAttendance(meetingId: string, merchantId: string, present: boolean, userId: string) {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!merchant) throw new NotFoundException('Comerciante no encontrado');
+
+    const existing = await this.prisma.attendanceEvent.findUnique({
+      where: {
+        meetingId_merchantId: {
+          meetingId,
+          merchantId,
+        },
+      },
+    });
+
+    if (present && !existing) {
+      await this.prisma.attendanceEvent.create({
+        data: {
+          meetingId,
+          merchantId,
+          dni: merchant.dni,
+          idempotencyKey: `att-manual-${meetingId}-${merchantId}-${Date.now()}`,
+          registeredById: userId,
+        },
+      });
+    } else if (!present && existing) {
+      await this.prisma.attendanceEvent.delete({
+        where: { id: existing.id },
+      });
+    }
+
+    return { success: true, present };
+  }
+
+  async bulkUpdateAttendance(
+    meetingId: string,
+    items: { merchantId: string; present: boolean }[],
+    userId: string,
+  ) {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    for (const item of items) {
+      await this.toggleAttendance(meetingId, item.merchantId, item.present, userId);
+    }
+
+    return { success: true, count: items.length };
   }
 
   async delete(id: string) {

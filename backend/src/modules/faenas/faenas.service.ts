@@ -41,7 +41,27 @@ export class FaenasService {
       },
     });
     if (!faena) throw new NotFoundException('Faena no encontrada');
-    return faena;
+
+    // Obtener todos los socios activos
+    const socioType = await this.prisma.merchantType.findFirst({ where: { code: 'SOCIO' } });
+    const allSocios = await this.prisma.merchant.findMany({
+      where: {
+        isDeleted: false,
+        ...(socioType ? { merchantTypeId: socioType.id } : {}),
+      },
+      include: { stall: true, sector: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    const attendedIds = new Set(faena.attendances.map((a) => a.merchantId));
+    const absent = allSocios.filter((s) => !attendedIds.has(s.id));
+
+    return {
+      ...faena,
+      totalSocios: allSocios.length,
+      allSocios: allSocios.map((s) => ({ ...s, isPresent: attendedIds.has(s.id) })),
+      absent,
+    };
   }
 
   async create(data: {
@@ -53,10 +73,12 @@ export class FaenasService {
     fineAmount?: number;
     createdById: string;
   }) {
+    const dStr = (data.date || '').split('T')[0];
+    const dateObj = dStr ? new Date(`${dStr}T12:00:00.000Z`) : new Date();
     return this.prisma.faena.create({
       data: {
         title: data.title,
-        date: new Date(data.date),
+        date: dateObj,
         time: data.time,
         sectorToClean: data.sectorToClean,
         description: data.description,
@@ -70,9 +92,6 @@ export class FaenasService {
   async registerAttendance(faenaId: string, dniOrCode: string, registeredById: string) {
     const faena = await this.prisma.faena.findUnique({ where: { id: faenaId } });
     if (!faena) throw new NotFoundException('Faena no encontrada');
-    if (faena.status === MeetingStatus.FINALIZADA) {
-      throw new BadRequestException('La faena ya ha sido finalizada');
-    }
 
     const clean = dniOrCode.replace('MB-QR-', '').trim();
     const merchant = await this.prisma.merchant.findFirst({
@@ -92,7 +111,7 @@ export class FaenasService {
     });
     if (exists) throw new BadRequestException('La asistencia a la faena ya fue registrada');
 
-    return this.prisma.faenaAttendance.create({
+    const att = await this.prisma.faenaAttendance.create({
       data: {
         faenaId,
         merchantId: merchant.id,
@@ -103,6 +122,22 @@ export class FaenasService {
         merchant: { select: { firstName: true, lastName: true, dni: true } },
       },
     });
+
+    // Si ya existía multa pendiente generada al finalizar, eliminarla al registrar asistencia
+    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_FAENA' } });
+    if (fineConcept) {
+      await this.prisma.paymentObligation.deleteMany({
+        where: {
+          merchantId: merchant.id,
+          conceptId: fineConcept.id,
+          period,
+          status: ObligationStatus.PENDIENTE,
+        },
+      });
+    }
+
+    return att;
   }
 
   async finalizeFaena(id: string) {
@@ -206,7 +241,10 @@ export class FaenasService {
 
     const updateData: any = {};
     if (data.title !== undefined) updateData.title = data.title;
-    if (data.date !== undefined) updateData.date = new Date(data.date);
+    if (data.date !== undefined) {
+      const dStr = (data.date || '').split('T')[0];
+      updateData.date = dStr ? new Date(`${dStr}T12:00:00.000Z`) : new Date();
+    }
     if (data.time !== undefined) updateData.time = data.time;
     if (data.sectorToClean !== undefined) updateData.sectorToClean = data.sectorToClean;
     if (data.description !== undefined) updateData.description = data.description;
@@ -216,6 +254,69 @@ export class FaenasService {
       where: { id },
       data: updateData,
     });
+  }
+
+  async toggleAttendance(faenaId: string, merchantId: string, present: boolean, userId: string) {
+    const faena = await this.prisma.faena.findUnique({ where: { id: faenaId } });
+    if (!faena) throw new NotFoundException('Faena no encontrada');
+
+    const merchant = await this.prisma.merchant.findUnique({ where: { id: merchantId } });
+    if (!merchant) throw new NotFoundException('Comerciante no encontrado');
+
+    const existing = await this.prisma.faenaAttendance.findUnique({
+      where: {
+        faenaId_merchantId: {
+          faenaId,
+          merchantId,
+        },
+      },
+    });
+
+    if (present && !existing) {
+      await this.prisma.faenaAttendance.create({
+        data: {
+          faenaId,
+          merchantId,
+          dni: merchant.dni,
+          registeredById: userId,
+        },
+      });
+
+      // Si existe multa pendiente por haber estado ausente, removerla
+      const period = `FAENA-${faena.id.slice(0, 8)}`;
+      const fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_FAENA' } });
+      if (fineConcept) {
+        await this.prisma.paymentObligation.deleteMany({
+          where: {
+            merchantId,
+            conceptId: fineConcept.id,
+            period,
+            status: ObligationStatus.PENDIENTE,
+          },
+        });
+      }
+    } else if (!present && existing) {
+      await this.prisma.faenaAttendance.delete({
+        where: { id: existing.id },
+      });
+    }
+
+    return { success: true, present };
+  }
+
+  async bulkUpdateAttendance(
+    faenaId: string,
+    items: { merchantId: string; present: boolean }[],
+    userId: string,
+  ) {
+    const faena = await this.prisma.faena.findUnique({ where: { id: faenaId } });
+    if (!faena) throw new NotFoundException('Faena no encontrada');
+
+    for (const item of items) {
+      await this.toggleAttendance(faenaId, item.merchantId, item.present, userId);
+    }
+
+    return { success: true, count: items.length };
   }
 
   async delete(id: string) {
