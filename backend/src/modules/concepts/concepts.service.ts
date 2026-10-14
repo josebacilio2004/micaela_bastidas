@@ -28,6 +28,58 @@ export class ConceptsService {
     });
   }
 
+  async createConcept(dto: {
+    code: string;
+    name: string;
+    description?: string;
+    periodicity?: Periodicity;
+  }) {
+    const existing = await this.prisma.paymentConcept.findUnique({
+      where: { code: dto.code.trim().toUpperCase() },
+    });
+    if (existing) {
+      throw new ConflictException(`Ya existe un concepto con el código "${dto.code}"`);
+    }
+
+    return this.prisma.paymentConcept.create({
+      data: {
+        code: dto.code.trim().toUpperCase(),
+        name: dto.name.trim(),
+        description: dto.description?.trim() || null,
+        periodicity: dto.periodicity || Periodicity.MENSUAL,
+        isActive: true,
+      },
+    });
+  }
+
+  async updateConcept(
+    id: string,
+    dto: { name?: string; description?: string; periodicity?: Periodicity; isActive?: boolean },
+  ) {
+    const concept = await this.prisma.paymentConcept.findUnique({ where: { id } });
+    if (!concept) throw new NotFoundException('Concepto no encontrado');
+
+    return this.prisma.paymentConcept.update({
+      where: { id },
+      data: {
+        ...(dto.name ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
+        ...(dto.periodicity ? { periodicity: dto.periodicity } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+  }
+
+  async deleteConcept(id: string) {
+    const concept = await this.prisma.paymentConcept.findUnique({ where: { id } });
+    if (!concept) throw new NotFoundException('Concepto no encontrado');
+
+    return this.prisma.paymentConcept.update({
+      where: { id },
+      data: { isActive: false },
+    });
+  }
+
   async createRate(dto: {
     conceptId: string;
     merchantTypeId?: string;
@@ -67,6 +119,16 @@ export class ConceptsService {
         ...(dto.endDate !== undefined ? { endDate: new Date(dto.endDate) } : {}),
       },
       include: { concept: true, merchantType: true },
+    });
+  }
+
+  async deleteRate(id: string) {
+    const rate = await this.prisma.rate.findUnique({ where: { id } });
+    if (!rate) throw new NotFoundException('Tarifa no encontrada');
+
+    return this.prisma.rate.update({
+      where: { id },
+      data: { isActive: false, endDate: new Date() },
     });
   }
 }

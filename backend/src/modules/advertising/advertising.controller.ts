@@ -64,6 +64,12 @@ export class AdvertisingController {
     return this.advService.updateScript(id, body);
   }
 
+  @Put('scripts/:id')
+  @ApiOperation({ summary: 'Actualizar guión pre-escrito (alias PUT)' })
+  async updateScriptPut(@Param('id') id: string, @Body() body: any) {
+    return this.advService.updateScript(id, body);
+  }
+
   @Delete('scripts/:id')
   @ApiOperation({ summary: 'Desactivar guión pre-escrito' })
   async deleteScript(@Param('id') id: string) {
