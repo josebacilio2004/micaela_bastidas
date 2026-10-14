@@ -57,7 +57,7 @@ const navigationSections: NavSection[] = [
     title: '2. Tesorería y Cobranzas',
     items: [
       { name: 'Caja y Cierres Diarios', href: '/caja', icon: Wallet },
-      { name: 'Socios: Mantenimiento & Agua', href: '/alcabala', icon: Coins },
+      { name: 'Socios: Mantenimiento & Agua', href: '/mantenimiento-socios', icon: Coins },
       { name: 'Ambulantes Fijos: Alcabala & Agua', href: '/ambulantes-fijos', icon: Store },
       { name: 'Ambulantes Temporales (Tickets)', href: '/ambulantes-temporales', icon: Ticket },
       { name: 'Inquilinos: Alquileres & Agua', href: '/alquileres', icon: Building },

@@ -84,7 +84,7 @@ export class MerchantsController {
   }
 
   @Delete('merchants/:id')
-  @Roles(RoleType.ADMINISTRADOR)
+  @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
   @ApiOperation({ summary: 'Eliminar comerciante (Soft-delete conservando historial financiero)' })
   softDelete(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.merchantsService.softDelete(id, userId);

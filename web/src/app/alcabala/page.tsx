@@ -91,18 +91,22 @@ export default function SociosMantenimientoAguaPage() {
     fetchData();
   }, []);
 
-  // Filter strictly for SOCIOS (Titulares 1-88 and En Prueba 89-107)
+  // Filter strictly for SOCIOS (107 socios: Titulares 1-88 y En Prueba 89-107)
   const socios = useMemo(() => {
     return merchants.filter((m) => {
-      // Type SOCIO or fallback if not ambulante/inquilino
-      const isSocio = m.merchantType === 'SOCIO' || (!m.merchantType && !m.internalCode?.includes('AF-') && !m.internalCode?.includes('INQ-'));
+      const typeCode = typeof m.merchantType === 'object' ? m.merchantType?.code : m.merchantType;
+      const isSocio = typeCode === 'SOCIO' || m.internalCode?.startsWith('MB-COM-') || (!m.internalCode?.includes('AF-') && !m.internalCode?.includes('INQ-') && !m.internalCode?.includes('COC-'));
       if (!isSocio) return false;
 
+      const numMatch = m.internalCode?.match(/\d+/);
+      const num = numMatch ? parseInt(numMatch[0], 10) : 0;
+      const isPrueba = m.memberCondition === 'SOCIO_EN_PRUEBA' || num > 88;
+
       if (memberTypeFilter === 'TITULAR') {
-        return m.memberCategory === 'TITULAR' || (m.internalCode && parseInt(m.internalCode.replace(/\D/g, ''), 10) <= 88);
+        return !isPrueba;
       }
       if (memberTypeFilter === 'PRUEBA') {
-        return m.memberCategory === 'PRUEBA' || (m.internalCode && parseInt(m.internalCode.replace(/\D/g, ''), 10) > 88);
+        return isPrueba;
       }
       return true;
     });

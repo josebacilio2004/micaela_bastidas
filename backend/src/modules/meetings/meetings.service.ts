@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { MeetingStatus } from '@prisma/client';
+import { MeetingStatus, ObligationStatus } from '@prisma/client';
 
 @Injectable()
 export class MeetingsService {
@@ -113,7 +113,7 @@ export class MeetingsService {
     });
   }
 
-  async update(id: string, dto: { title?: string; date?: string; time?: string; location?: string; description?: string }) {
+  async update(id: string, dto: { title?: string; date?: string; time?: string; location?: string; description?: string; status?: MeetingStatus }) {
     const meeting = await this.prisma.meeting.findUnique({ where: { id } });
     if (!meeting) throw new NotFoundException('Reunión no encontrada');
 
@@ -126,6 +126,7 @@ export class MeetingsService {
     if (dto.time !== undefined) data.time = dto.time;
     if (dto.location !== undefined) data.location = dto.location;
     if (dto.description !== undefined) data.description = dto.description;
+    if (dto.status !== undefined) data.status = dto.status;
 
     return this.prisma.meeting.update({
       where: { id },
@@ -190,9 +191,27 @@ export class MeetingsService {
     });
     if (!meeting) throw new NotFoundException('Reunión no encontrada');
 
-    if (meeting.status === MeetingStatus.FINALIZADA) {
-      throw new BadRequestException('No se puede eliminar una asamblea que ya ha sido finalizada y cuyas multas o actas ya fueron procesadas.');
+    const period = `FALTA-${meeting.id.slice(0, 8)}`;
+    const paidFines = await this.prisma.paymentObligation.count({
+      where: {
+        period,
+        status: ObligationStatus.PAGADO,
+      },
+    });
+
+    if (paidFines > 0) {
+      throw new BadRequestException(`No se puede eliminar esta asamblea porque ya se cobraron ${paidFines} multas en caja.`);
     }
+
+    // Clean up unpaid fine obligations
+    await this.prisma.paymentObligation.deleteMany({
+      where: { period },
+    });
+
+    // Delete attendance events
+    await this.prisma.attendanceEvent.deleteMany({
+      where: { meetingId: id },
+    });
 
     return this.prisma.meeting.delete({
       where: { id },

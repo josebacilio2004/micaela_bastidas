@@ -7,13 +7,23 @@ export class FaenasService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
-    return this.prisma.faena.findMany({
+    const totalSocios = await this.prisma.merchant.count({
+      where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
+    });
+
+    const faenas = await this.prisma.faena.findMany({
       include: {
         createdBy: { select: { fullName: true } },
         _count: { select: { attendances: true } },
       },
       orderBy: { date: 'desc' },
     });
+
+    return faenas.map((f) => ({
+      ...f,
+      totalEligible: totalSocios,
+      attendedCount: f._count.attendances,
+    }));
   }
 
   async findOne(id: string) {
@@ -31,6 +41,7 @@ export class FaenasService {
                 lastName: true,
                 dni: true,
                 photoUrl: true,
+                memberCondition: true,
                 stall: { select: { code: true } },
               },
             },
@@ -71,6 +82,7 @@ export class FaenasService {
     sectorToClean?: string;
     description?: string;
     fineAmount?: number;
+    status?: MeetingStatus;
     createdById: string;
   }) {
     const dStr = (data.date || '').split('T')[0];
@@ -80,10 +92,10 @@ export class FaenasService {
         title: data.title,
         date: dateObj,
         time: data.time,
-        sectorToClean: data.sectorToClean,
+        sectorToClean: data.sectorToClean || 'Todos los Sectores y Pasajes',
         description: data.description,
         fineAmount: data.fineAmount ? Number(data.fineAmount) : 30.00,
-        status: MeetingStatus.PROGRAMADA,
+        status: data.status || MeetingStatus.PROGRAMADA,
         createdById: data.createdById,
       },
     });
@@ -234,6 +246,7 @@ export class FaenasService {
       sectorToClean?: string;
       description?: string;
       fineAmount?: number;
+      status?: MeetingStatus;
     },
   ) {
     const faena = await this.prisma.faena.findUnique({ where: { id } });
@@ -249,6 +262,7 @@ export class FaenasService {
     if (data.sectorToClean !== undefined) updateData.sectorToClean = data.sectorToClean;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.fineAmount !== undefined) updateData.fineAmount = Number(data.fineAmount);
+    if (data.status !== undefined) updateData.status = data.status;
 
     return this.prisma.faena.update({
       where: { id },
@@ -326,9 +340,27 @@ export class FaenasService {
     });
     if (!faena) throw new NotFoundException('Faena no encontrada');
 
-    if (faena.status === MeetingStatus.FINALIZADA) {
-      throw new BadRequestException('No se puede eliminar una faena que ya ha sido finalizada y cuyas multas contables ya fueron procesadas.');
+    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const paidFines = await this.prisma.paymentObligation.count({
+      where: {
+        period,
+        status: ObligationStatus.PAGADO,
+      },
+    });
+
+    if (paidFines > 0) {
+      throw new BadRequestException(`No se puede eliminar esta faena porque ya se cobraron ${paidFines} multas en caja.`);
     }
+
+    // Clean up unpaid fine obligations
+    await this.prisma.paymentObligation.deleteMany({
+      where: { period },
+    });
+
+    // Delete attendance events
+    await this.prisma.faenaAttendance.deleteMany({
+      where: { faenaId: id },
+    });
 
     return this.prisma.faena.delete({
       where: { id },
