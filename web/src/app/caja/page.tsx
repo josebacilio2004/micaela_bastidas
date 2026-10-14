@@ -66,6 +66,18 @@ export default function CajaPage() {
   const [reopenId, setReopenId] = useState<string | null>(null);
   const [reopenReason, setReopenReason] = useState('');
 
+  // Ticket de Arqueo y Cierre Imprimible
+  const [printClosingTicket, setPrintClosingTicket] = useState<any>(null);
+
+  const handleOpenClosingTicket = async (regId: string) => {
+    try {
+      const sum = await apiRequest(`/cash-registers/${regId}/summary`);
+      setPrintClosingTicket(sum);
+    } catch (e: any) {
+      alert('Error al cargar datos del arqueo: ' + (e.message || e));
+    }
+  };
+
   const fetchCajaData = async (dateParam?: string) => {
     setLoading(true);
     const dateQuery = dateParam || selectedDate;
@@ -148,7 +160,8 @@ export default function CajaPage() {
     e.preventDefault();
     if (!currentRegister) return;
     try {
-      await apiRequest(`/cash-registers/${currentRegister.id}/close`, {
+      const closedId = currentRegister.id;
+      const resClose = await apiRequest(`/cash-registers/${closedId}/close`, {
         method: 'POST',
         body: JSON.stringify({
           countedCash: Number(countedCash),
@@ -160,7 +173,13 @@ export default function CajaPage() {
       setCountedCash('');
       setClosingObservations('');
       setDiscrepancyReason('');
-      fetchCajaData();
+      await fetchCajaData();
+
+      // Cargar resumen oficial para abrir ticket de arqueo inmediatamente
+      const sum = await apiRequest(`/cash-registers/${closedId}/summary`).catch(() => null);
+      if (sum) {
+        setPrintClosingTicket(sum);
+      }
     } catch (err: any) {
       alert(err.message || 'Error al cerrar caja');
     }
@@ -662,15 +681,24 @@ export default function CajaPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      {reg.status === 'CERRADO' && (
+                      <div className="flex items-center justify-center space-x-1.5">
                         <button
-                          onClick={() => setReopenId(reg.id)}
-                          className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1 rounded transition"
-                          title="Reabrir caja con motivo justificado (solo Administrador)"
+                          onClick={() => handleOpenClosingTicket(reg.id)}
+                          className="p-1 hover:bg-emerald-50 text-emerald-700 rounded-lg transition"
+                          title="Ver / Imprimir Ticket de Arqueo y Cierre"
                         >
-                          Reabrir
+                          <Printer className="w-4 h-4" />
                         </button>
-                      )}
+                        {reg.status === 'CERRADO' && (
+                          <button
+                            onClick={() => setReopenId(reg.id)}
+                            className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded transition"
+                            title="Reabrir caja con motivo justificado (solo Administrador)"
+                          >
+                            Reabrir
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1039,6 +1067,166 @@ export default function CajaPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TICKET DE ARQUEO Y CIERRE DIARIO (FORMATO TÉRMICO 80MM) */}
+      {printClosingTicket && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 font-sans max-h-[92vh] overflow-y-auto">
+            <div className="text-center border-b pb-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto mb-1.5 font-black text-xs">
+                MB
+              </div>
+              <h3 className="font-black text-xs uppercase text-slate-900 leading-tight">
+                ASOCIACIÓN DE PEQUEÑOS COMERCIANTES DEL MERCADO DE ABASTOS &quot;MICAELA BASTIDAS&quot;
+              </h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">
+                ACTA OFICIAL DE CIERRE Y ARQUEO DE CAJA
+              </p>
+              <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5">
+                {printClosingTicket.register?.name}
+              </p>
+            </div>
+
+            <div className="space-y-1.5 text-xs border-b pb-3 mb-3">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Apertura:</span>
+                <span className="font-mono text-[11px] text-slate-800">
+                  {new Date(printClosingTicket.register?.openedAt).toLocaleString('es-PE')}
+                </span>
+              </div>
+              {printClosingTicket.register?.closedAt && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Cierre:</span>
+                  <span className="font-mono text-[11px] text-slate-800">
+                    {new Date(printClosingTicket.register?.closedAt).toLocaleString('es-PE')}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-500">Responsable:</span>
+                <span className="font-bold text-slate-800 truncate max-w-[170px]">
+                  {printClosingTicket.register?.openedBy?.fullName || 'Tesorería'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Fondo Inicial:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  S/ {Number(printClosingTicket.openingAmount || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Desglose por Conceptos */}
+            <div className="space-y-1 text-xs border-b border-dashed pb-3 mb-3">
+              <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">
+                Recaudación por Conceptos:
+              </span>
+              <div className="flex justify-between text-slate-600">
+                <span>Alcabala / Mantenimiento:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  S/ {Number(printClosingTicket.alcabalaSum || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Consumo de Agua:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  S/ {Number(printClosingTicket.waterSum || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Servicios Higiénicos:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  S/ {Number(printClosingTicket.sanitarySum || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>Otros Ingresos / Movimientos:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  S/ {Number((printClosingTicket.otherPaymentsSum || 0) + (printClosingTicket.movementsIncome || 0)).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-rose-600 pt-1 border-t border-slate-100">
+                <span>Egresos / Gastos Menores:</span>
+                <span className="font-mono font-bold">
+                  - S/ {Number(printClosingTicket.movementsExpense || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Resultados del Arqueo */}
+            <div className="space-y-1.5 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200 mb-3">
+              <div className="flex justify-between font-bold text-slate-700">
+                <span>Total Recaudado:</span>
+                <span className="font-mono text-emerald-700 font-black">
+                  S/ {Number(printClosingTicket.totalCollected || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between font-bold text-slate-700">
+                <span>Saldo Teórico Esperado:</span>
+                <span className="font-mono text-slate-900 font-black">
+                  S/ {Number(printClosingTicket.expectedCash || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between font-bold text-slate-800 pt-1 border-t border-slate-200">
+                <span>Efectivo Físico Contado:</span>
+                <span className="font-mono text-emerald-800 font-black text-sm">
+                  S/ {Number(printClosingTicket.register?.countedCash || printClosingTicket.expectedCash || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between font-bold text-xs pt-1">
+                <span>Diferencia de Caja:</span>
+                <span className={`font-mono font-black ${
+                  Number(printClosingTicket.register?.difference || 0) === 0
+                    ? 'text-emerald-700'
+                    : Number(printClosingTicket.register?.difference || 0) > 0
+                    ? 'text-blue-700'
+                    : 'text-rose-600'
+                }`}>
+                  {Number(printClosingTicket.register?.difference || 0) === 0
+                    ? 'S/ 0.00 (EXACTO)'
+                    : `S/ ${Number(printClosingTicket.register?.difference || 0).toFixed(2)}`}
+                </span>
+              </div>
+            </div>
+
+            {printClosingTicket.register?.closingObservations && (
+              <p className="text-[10px] text-slate-500 italic mb-4">
+                &quot;{printClosingTicket.register.closingObservations}&quot;
+              </p>
+            )}
+
+            {/* Espacios de Firma Oficiales */}
+            <div className="grid grid-cols-2 gap-4 text-center pt-8 border-t border-dashed border-slate-300 text-[10px] text-slate-600 mb-4">
+              <div className="border-t border-slate-800 pt-1">
+                <p className="font-bold uppercase text-slate-800">Firma Tesorería</p>
+                <p className="text-[9px] text-slate-400">Entrega de Efectivo</p>
+              </div>
+              <div className="border-t border-slate-800 pt-1">
+                <p className="font-bold uppercase text-slate-800">V°B° Presidencia</p>
+                <p className="text-[9px] text-slate-400">Recepción y Cuadre</p>
+              </div>
+            </div>
+
+            <div className="flex space-x-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setPrintClosingTicket(null)}
+                className="flex-1 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 text-xs"
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow flex items-center justify-center space-x-1.5"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir Ticket</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

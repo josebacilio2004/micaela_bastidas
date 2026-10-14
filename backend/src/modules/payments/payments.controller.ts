@@ -48,7 +48,7 @@ export class PaymentsController {
   }
 
   @Post(':id/void')
-  @Roles(RoleType.ADMINISTRADOR)
+  @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
   @ApiOperation({ summary: 'Anular un pago registrado con justificación obligatoria' })
   voidPayment(
     @Param('id') id: string,

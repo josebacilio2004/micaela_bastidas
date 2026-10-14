@@ -255,4 +255,82 @@ export class ExportsService {
     };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   }
+
+  async exportFullDatabaseDump(): Promise<string> {
+    const [
+      merchants,
+      sectors,
+      stalls,
+      merchantTypes,
+      concepts,
+      rates,
+      obligations,
+      payments,
+      registers,
+      movements,
+      sanitarySessions,
+      meetings,
+      faenas,
+      documents,
+      expenses,
+      rentals,
+      loans,
+      ads,
+      scripts,
+      users,
+    ] = await Promise.all([
+      this.prisma.merchant.findMany(),
+      this.prisma.sector.findMany(),
+      this.prisma.marketStall.findMany(),
+      this.prisma.merchantType.findMany(),
+      this.prisma.paymentConcept.findMany(),
+      this.prisma.rate.findMany(),
+      this.prisma.paymentObligation.findMany(),
+      this.prisma.payment.findMany(),
+      this.prisma.cashRegister.findMany(),
+      this.prisma.cashMovement.findMany(),
+      this.prisma.sanitaryServiceSession.findMany(),
+      this.prisma.meeting.findMany({ include: { attendances: true } }),
+      this.prisma.faena.findMany({ include: { attendances: true } }),
+      this.prisma.marketDocument.findMany(),
+      this.prisma.marketExpense.findMany(),
+      this.prisma.stallRentalContract.findMany({ include: { installments: true } }),
+      this.prisma.loan.findMany({ include: { collections: true } }),
+      this.prisma.advertisement.findMany(),
+      this.prisma.advertisingScript.findMany(),
+      this.prisma.user.findMany({ select: { id: true, username: true, fullName: true, phone: true, isActive: true, roles: { include: { role: true } } } }),
+    ]);
+
+    const backupData = {
+      meta: {
+        system: 'MERCADO DE ABASTOS MICAELA BASTIDAS',
+        exportedAt: new Date().toISOString(),
+        version: '2.0.0',
+        totalSocios: merchants.length,
+        totalPagos: payments.length,
+      },
+      merchants,
+      sectors,
+      stalls,
+      merchantTypes,
+      concepts,
+      rates,
+      obligations,
+      payments,
+      registers,
+      movements,
+      sanitarySessions,
+      meetings,
+      faenas,
+      documents,
+      expenses,
+      rentals,
+      loans,
+      advertisements: ads,
+      advertisingScripts: scripts,
+      users,
+    };
+
+    return JSON.stringify(backupData, null, 2);
+  }
 }

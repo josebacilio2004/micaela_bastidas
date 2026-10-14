@@ -44,4 +44,15 @@ export class ExportsController {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csvData);
   }
+
+  @Get('database-backup')
+  @ApiOperation({ summary: 'Descargar copia de seguridad completa del sistema en JSON estructurado' })
+  async exportDatabaseBackup(@Res() res: Response) {
+    const backupJson = await this.exportsService.exportFullDatabaseDump();
+    const filename = `backup_micaela_bastidas_${new Date().toISOString().split('T')[0]}.json`;
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(backupJson);
+  }
 }

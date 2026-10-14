@@ -6,6 +6,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RoleType } from '@prisma/client';
 
 @ApiTags('Users')
@@ -14,6 +15,15 @@ import { RoleType } from '@prisma/client';
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}
+
+  @Post('change-password')
+  @ApiOperation({ summary: 'Cambiar la contraseña del usuario actualmente autenticado' })
+  changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.usersService.changePassword(userId, body.currentPassword, body.newPassword);
+  }
 
   @Get()
   @Roles(RoleType.ADMINISTRADOR)

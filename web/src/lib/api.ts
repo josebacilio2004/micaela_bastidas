@@ -129,6 +129,8 @@ export function getExcelDownloadUrl(startDate?: string, endDate?: string) {
   const params = new URLSearchParams();
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
+  const token = getAuthToken();
+  if (token) params.append('token', token);
   return `${BASE_URL}/exports/excel?${params.toString()}`;
 }
 
@@ -136,7 +138,38 @@ export function getCsvDownloadUrl(startDate?: string, endDate?: string) {
   const params = new URLSearchParams();
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
+  const token = getAuthToken();
+  if (token) params.append('token', token);
   return `${BASE_URL}/exports/csv?${params.toString()}`;
+}
+
+export function getDatabaseBackupUrl() {
+  const token = getAuthToken();
+  const params = new URLSearchParams();
+  if (token) params.append('token', token);
+  return `${BASE_URL}/exports/database-backup?${params.toString()}`;
+}
+
+export async function downloadFileWithAuth(url: string, filename: string) {
+  const token = getAuthToken();
+  const res = await fetch(url, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.message || `Error ${res.status}: No se pudo descargar el archivo.`);
+  }
+  const blob = await res.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(blobUrl);
 }
 
 export function getAuthToken(): string | null {

@@ -1,11 +1,12 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { apiRequest } from '@/lib/api';
-import { History, ShieldCheck } from 'lucide-react';
+import { apiRequest, downloadFileWithAuth, getDatabaseBackupUrl } from '@/lib/api';
+import { History, ShieldCheck, Database, Download } from 'lucide-react';
 
 export default function AuditoriaPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -22,11 +23,35 @@ export default function AuditoriaPage() {
     fetchLogs();
   }, []);
 
+  const handleDownloadBackup = async () => {
+    try {
+      setDownloading(true);
+      const filename = `backup_micaela_bastidas_${new Date().toISOString().split('T')[0]}.json`;
+      await downloadFileWithAuth(getDatabaseBackupUrl(), filename);
+    } catch (err: any) {
+      alert(err.message || 'Error al descargar copia de seguridad');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Bitácora de Auditoría</h1>
-        <p className="text-xs text-slate-500">Trazabilidad inmutable de inicios de sesión, cobros, aperturas, cierres de caja y modificaciones.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Bitácora de Auditoría</h1>
+          <p className="text-xs text-slate-500">Trazabilidad inmutable de inicios de sesión, cobros, aperturas, cierres de caja y modificaciones.</p>
+        </div>
+        <div>
+          <button
+            onClick={handleDownloadBackup}
+            disabled={downloading}
+            className="flex items-center space-x-2 bg-indigo-700 hover:bg-indigo-800 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
+          >
+            <Database className="w-4 h-4" />
+            <span>{downloading ? 'Descargando Copia...' : 'Descargar Backup Base de Datos'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">

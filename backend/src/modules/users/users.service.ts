@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -92,5 +92,25 @@ export class UsersService {
       data,
       include: { roles: { include: { role: true } } },
     });
+  }
+
+  async changePassword(userId: string, currentPass: string, newPass: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const isValid = await bcrypt.compare(currentPass, user.passwordHash);
+    if (!isValid) throw new BadRequestException('La contraseña actual es incorrecta');
+
+    if (!newPass || newPass.trim().length < 6) {
+      throw new BadRequestException('La nueva contraseña debe tener al menos 6 caracteres');
+    }
+
+    const passwordHash = await bcrypt.hash(newPass.trim(), 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    return { success: true, message: 'Contraseña actualizada correctamente' };
   }
 }

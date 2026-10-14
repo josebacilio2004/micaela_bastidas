@@ -28,6 +28,7 @@ import {
   Eye,
   Download,
   FolderPlus,
+  Calendar,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -80,6 +81,12 @@ export default function PadronPage() {
   const [showAssemblyModal, setShowAssemblyModal] = useState(false);
   const [assemblyTitle, setAssemblyTitle] = useState('ASAMBLEA GENERAL EXTRAORDINARIA');
   const [assemblyDate, setAssemblyDate] = useState('04-02-2022');
+
+  // Modal Generar Cuotas Mensuales
+  const [showGenerateMonthlyModal, setShowGenerateMonthlyModal] = useState(false);
+  const [generateYear, setGenerateYear] = useState(new Date().getFullYear());
+  const [generateMonth, setGenerateMonth] = useState(new Date().getMonth() + 1);
+  const [generateLoading, setGenerateLoading] = useState(false);
 
   // Create modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -438,6 +445,27 @@ export default function PadronPage() {
     }
   };
 
+  const handleGenerateMonthly = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGenerateLoading(true);
+    try {
+      const res = await apiRequest('/obligations/generate-monthly', {
+        method: 'POST',
+        body: JSON.stringify({
+          year: Number(generateYear),
+          month: Number(generateMonth),
+        }),
+      });
+      alert(res.message || '✓ Cuotas mensuales generadas exitosamente');
+      setShowGenerateMonthlyModal(false);
+      fetchData();
+    } catch (err: any) {
+      alert('Error al generar cuotas: ' + (err.message || err));
+    } finally {
+      setGenerateLoading(false);
+    }
+  };
+
   const openEditModal = (merchant: any) => {
     setEditingMerchant(merchant);
     setEditFormData({
@@ -628,6 +656,13 @@ export default function PadronPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowGenerateMonthlyModal(true)}
+            className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
+          >
+            <Calendar className="w-4 h-4 text-indigo-200" />
+            <span>Generar Cuotas del Mes</span>
+          </button>
           <button
             onClick={() => setShowAssemblyModal(true)}
             className="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
@@ -2772,6 +2807,97 @@ export default function PadronPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GENERAR CUOTAS MENSUALES */}
+      {showGenerateMonthlyModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div className="flex items-center space-x-2 text-indigo-600">
+                <Calendar className="w-5 h-5" />
+                <h3 className="font-black text-sm uppercase text-slate-800">Generar Cuotas Mensuales</h3>
+              </div>
+              <button
+                onClick={() => setShowGenerateMonthlyModal(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Este proceso genera automáticamente las obligaciones de pago de <b>Cuota de Mantenimiento (Alcabala)</b> y <b>Consumo de Agua</b> para los <b>107 socios oficiales</b> y ambulantes fijos del mercado. Las cuotas ya existentes para este período se conservan intactas sin duplicarse.
+            </p>
+
+            <form onSubmit={handleGenerateMonthly} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 uppercase mb-1">Año *</label>
+                  <select
+                    value={generateYear}
+                    onChange={(e) => setGenerateYear(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold font-mono"
+                  >
+                    {[2025, 2026, 2027, 2028].map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 uppercase mb-1">Mes *</label>
+                  <select
+                    value={generateMonth}
+                    onChange={(e) => setGenerateMonth(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl font-bold"
+                  >
+                    {[
+                      { m: 1, name: '01 - Enero' },
+                      { m: 2, name: '02 - Febrero' },
+                      { m: 3, name: '03 - Marzo' },
+                      { m: 4, name: '04 - Abril' },
+                      { m: 5, name: '05 - Mayo' },
+                      { m: 6, name: '06 - Junio' },
+                      { m: 7, name: '07 - Julio' },
+                      { m: 8, name: '08 - Agosto' },
+                      { m: 9, name: '09 - Setiembre' },
+                      { m: 10, name: '10 - Octubre' },
+                      { m: 11, name: '11 - Noviembre' },
+                      { m: 12, name: '12 - Diciembre' },
+                    ].map((item) => (
+                      <option key={item.m} value={item.m}>{item.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-100 text-[11px] text-indigo-900 space-y-1">
+                <p className="font-bold">Período Seleccionado: {generateYear}-{String(generateMonth).padStart(2, '0')}</p>
+                <p className="text-slate-500">Se asignará fecha de vencimiento al último día del mes correspondiente.</p>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowGenerateMonthlyModal(false)}
+                  disabled={generateLoading}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={generateLoading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow transition flex items-center space-x-1.5"
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>{generateLoading ? 'Generando...' : 'Generar Obligaciones'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

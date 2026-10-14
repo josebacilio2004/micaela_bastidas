@@ -1,13 +1,21 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api';
-import { ShieldCheck, UserCheck, CheckCircle2, Plus, X, UserPlus, Lock } from 'lucide-react';
+import { ShieldCheck, UserCheck, CheckCircle2, Plus, X, UserPlus, Lock, KeyRound } from 'lucide-react';
 
 export default function UsuariosPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const [isChangePassOpen, setIsChangePassOpen] = useState(false);
+  const [passData, setPassData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [savingPass, setSavingPass] = useState(false);
 
   const [formData, setFormData] = useState({
     username: '',
@@ -70,6 +78,35 @@ export default function UsuariosPage() {
     }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passData.newPassword.length < 6) {
+      alert('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (passData.newPassword !== passData.confirmPassword) {
+      alert('Las nuevas contraseñas no coinciden.');
+      return;
+    }
+    setSavingPass(true);
+    try {
+      await apiRequest('/users/change-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentPassword: passData.currentPassword,
+          newPassword: passData.newPassword,
+        }),
+      });
+      alert('Contraseña actualizada correctamente.');
+      setIsChangePassOpen(false);
+      setPassData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err: any) {
+      alert(err.message || 'Error al actualizar contraseña.');
+    } finally {
+      setSavingPass(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -77,13 +114,22 @@ export default function UsuariosPage() {
           <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Gestión de Usuarios y Roles</h1>
           <p className="text-xs text-slate-500">Control RBAC: Administrador, Tesorera, Servicios Higiénicos y Consulta.</p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center space-x-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Nuevo Usuario</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setIsChangePassOpen(true)}
+            className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>Cambiar Mi Contraseña</span>
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center space-x-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Nuevo Usuario</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -229,6 +275,78 @@ export default function UsuariosPage() {
                   className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold"
                 >
                   {submitting ? 'Creando...' : 'Crear Usuario'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isChangePassOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setIsChangePassOpen(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-lg font-black text-slate-800 mb-4 uppercase flex items-center space-x-2">
+              <KeyRound className="w-5 h-5 text-indigo-700" />
+              <span>Cambiar Mi Contraseña</span>
+            </h2>
+
+            <form onSubmit={handleChangePassword} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Contraseña Actual</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Tu contraseña actual"
+                  value={passData.currentPassword}
+                  onChange={(e) => setPassData({ ...passData, currentPassword: e.target.value })}
+                  className="w-full border border-slate-200 rounded-lg p-2 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Nueva Contraseña</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Mínimo 6 caracteres"
+                  value={passData.newPassword}
+                  onChange={(e) => setPassData({ ...passData, newPassword: e.target.value })}
+                  className="w-full border border-slate-200 rounded-lg p-2 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Confirmar Nueva Contraseña</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Repite la nueva contraseña"
+                  value={passData.confirmPassword}
+                  onChange={(e) => setPassData({ ...passData, confirmPassword: e.target.value })}
+                  className="w-full border border-slate-200 rounded-lg p-2 font-mono"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsChangePassOpen(false)}
+                  className="px-4 py-2 border rounded-lg font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPass}
+                  className="px-4 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg font-bold"
+                >
+                  {savingPass ? 'Guardando...' : 'Actualizar Contraseña'}
                 </button>
               </div>
             </form>
