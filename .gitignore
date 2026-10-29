@@ -58,3 +58,23 @@ mobile/ios/.symlinks/
 Thumbs.db
 ~$*
 *.tmp
+
+# Formatos y datos cargados de Excel / Documentos
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+*.tsv
+*.ods
+*.docx
+*.doc
+FORMATOS*.xlsx
+*COBRO*.xlsx
+*socios*.xlsx
+*SOCIOS*
+*padron*.xlsx
+*PADRON*.xlsx
+*padron*.csv
+*PADRON*.csv
+
