@@ -29,6 +29,12 @@ import {
   Download,
   FolderPlus,
   Calendar,
+  Coins,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  DollarSign,
+  Receipt,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -52,6 +58,21 @@ export default function PadronPage() {
 
   // Semáforo de Morosidad
   const [morosidadFilter, setMorosidadFilter] = useState<'ALL' | 'AL_DIA' | 'PENDIENTE' | 'MOROSO'>('ALL');
+
+  // Vista principal: Padron General vs Control de Multas
+  const [activePadronView, setActivePadronView] = useState<'PADRON' | 'MULTAS'>('PADRON');
+
+  // Estado global de multas para la seccion Control de Multas
+  const [allFines, setAllFines] = useState<any[]>([]);
+  const [loadingAllFines, setLoadingAllFines] = useState(false);
+  const [finesConceptFilter, setFinesConceptFilter] = useState<'ALL' | 'MULTA_ASAMBLEA' | 'MULTA_FAENA' | 'MULTA_TARDANZA'>('ALL');
+  const [finesStatusFilter, setFinesStatusFilter] = useState<'ALL' | 'PENDIENTE' | 'PAGADO'>('ALL');
+  const [finesSearch, setFinesSearch] = useState('');
+
+  // Modal Detalle de Multas por Comerciante Individual
+  const [finesModalMerchant, setFinesModalMerchant] = useState<any>(null);
+  const [merchantFinesList, setMerchantFinesList] = useState<any[]>([]);
+  const [loadingMerchantFines, setLoadingMerchantFines] = useState(false);
   const [requerimientoMerchant, setRequerimientoMerchant] = useState<any>(null);
   const [loadingRequerimiento, setLoadingRequerimiento] = useState(false);
 
@@ -154,8 +175,35 @@ export default function PadronPage() {
     }
   };
 
+  const fetchAllFines = async () => {
+    setLoadingAllFines(true);
+    try {
+      const res = await apiRequest('/obligations?conceptCode=MULTA_ASAMBLEA,MULTA_FAENA,MULTA_TARDANZA');
+      setAllFines(Array.isArray(res) ? res : []);
+    } catch (e) {
+      console.error('Error fetching all fines:', e);
+    } finally {
+      setLoadingAllFines(false);
+    }
+  };
+
+  const openMerchantFinesModal = async (merchant: any) => {
+    setFinesModalMerchant(merchant);
+    setLoadingMerchantFines(true);
+    try {
+      const res = await apiRequest(`/obligations?merchantId=${merchant.id}&conceptCode=MULTA_ASAMBLEA,MULTA_FAENA,MULTA_TARDANZA`);
+      setMerchantFinesList(Array.isArray(res) ? res : []);
+    } catch (e) {
+      console.error('Error fetching merchant fines:', e);
+      setMerchantFinesList(merchant.obligations || []);
+    } finally {
+      setLoadingMerchantFines(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchAllFines();
   }, [search]);
 
   // Subir Foto de Perfil
@@ -680,7 +728,38 @@ export default function PadronPage() {
         </div>
       </div>
 
-      {/* Pestañas Principales: Todos, Socios, Inquilinos, Ambulantes */}
+            {/* Selector de Sección Principal: Padrón General vs Control de Multas */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setActivePadronView('PADRON')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
+            activePadronView === 'PADRON'
+              ? 'bg-slate-900 text-white shadow'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Padrón General ({merchants.length} Comerciantes)</span>
+        </button>
+        <button
+          onClick={() => {
+            setActivePadronView('MULTAS');
+            fetchAllFines();
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
+            activePadronView === 'MULTAS'
+              ? 'bg-rose-700 text-white shadow'
+              : 'bg-white text-rose-700 hover:bg-rose-50 border border-rose-200'
+          }`}
+        >
+          <Coins className="w-4 h-4" />
+          <span>Control y Registro de Multas de Clientes ({allFines.length})</span>
+        </button>
+      </div>
+
+      {activePadronView === 'PADRON' ? (
+        <div className="space-y-6">
+{/* Pestañas Principales: Todos, Socios, Inquilinos, Ambulantes */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap gap-2">
         <button
           onClick={() => setActiveGroup('ALL')}
@@ -906,6 +985,7 @@ export default function PadronPage() {
               <th className="py-3 px-4">DNI Escaneado</th>
               <th className="py-3 px-4">Recibo Luz/Agua</th>
               <th className="py-3 px-4">Deuda</th>
+              <th className="py-3 px-4">Multas</th>
               <th className="py-3 px-4 text-center">Acciones</th>
             </tr>
           </thead>
@@ -1168,6 +1248,28 @@ export default function PadronPage() {
                     )}
                   </td>
 
+                  {/* Columna Multas por Inasistencia */}
+                  <td className="py-3 px-4">
+                    {(() => {
+                      const fines = m.obligations || [];
+                      const count = fines.length;
+                      const total = fines.reduce((acc: number, o: any) => acc + Number(o.amount || 0), 0);
+                      if (count > 0) {
+                        return (
+                          <button
+                            onClick={() => openMerchantFinesModal(m)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 transition shadow-sm"
+                            title="Ver detalle de multas por asambleas o faenas"
+                          >
+                            <AlertTriangle className="w-3 h-3 text-rose-600 flex-shrink-0" />
+                            <span>S/ {total.toFixed(2)} ({count} {count === 1 ? 'multa' : 'multas'})</span>
+                          </button>
+                        );
+                      }
+                      return <span className="text-[11px] font-medium text-slate-400">Sin multas</span>;
+                    })()}
+                  </td>
+
                   {/* Acciones */}
                   <td className="py-3 px-4 text-center">
                     <div className="flex items-center justify-center space-x-1">
@@ -1187,6 +1289,15 @@ export default function PadronPage() {
                         className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg transition"
                       >
                         <FileText className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Ver Multas y Sanciones */}
+                      <button
+                        onClick={() => openMerchantFinesModal(m)}
+                        title="Ver Multas y Sanciones del Comerciante"
+                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition"
+                      >
+                        <Coins className="w-3.5 h-3.5" />
                       </button>
 
                       {/* Cuenta Corriente */}
@@ -1223,6 +1334,296 @@ export default function PadronPage() {
           </tbody>
         </table>
       </div>
+        </div>
+      ) : (
+        /* VISTA DEDICADA: CONTROL Y REGISTRO DE MULTAS DE CLIENTES / SOCIOS */
+        <div className="space-y-6">
+          {/* Header & KPI Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Multas Registradas</span>
+                <span className="text-2xl font-black text-slate-800 font-mono mt-1 block">
+                  S/ {allFines.reduce((sum, f) => sum + Number(f.amount || 0), 0).toFixed(2)}
+                </span>
+                <span className="text-[11px] text-slate-500 font-medium">{allFines.length} sanciones en total</span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
+                <Coins className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-rose-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Pendiente por Cobrar</span>
+                <span className="text-2xl font-black text-rose-700 font-mono mt-1 block">
+                  S/ {allFines.filter(f => f.status === 'PENDIENTE').reduce((sum, f) => sum + Number(f.amount || 0), 0).toFixed(2)}
+                </span>
+                <span className="text-[11px] text-rose-600 font-bold">{allFines.filter(f => f.status === 'PENDIENTE').length} multas pendientes</span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Recaudado en Caja</span>
+                <span className="text-2xl font-black text-emerald-700 font-mono mt-1 block">
+                  S/ {allFines.filter(f => f.status === 'PAGADO').reduce((sum, f) => sum + Number(f.amount || 0), 0).toFixed(2)}
+                </span>
+                <span className="text-[11px] text-emerald-600 font-bold">{allFines.filter(f => f.status === 'PAGADO').length} multas cobradas</span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Clientes con Sanción</span>
+                <span className="text-2xl font-black text-amber-800 font-mono mt-1 block">
+                  {new Set(allFines.filter(f => f.status === 'PENDIENTE').map(f => f.merchantId)).size} Socios
+                </span>
+                <span className="text-[11px] text-amber-700 font-medium">con adeudos activos</span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-700">
+                <Users className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros de la Sección Multas */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-xs font-bold text-slate-500 uppercase mr-1">Concepto:</span>
+              <button
+                onClick={() => setFinesConceptFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  finesConceptFilter === 'ALL'
+                    ? 'bg-slate-900 text-white shadow'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Todas las Multas ({allFines.length})
+              </button>
+              <button
+                onClick={() => setFinesConceptFilter('MULTA_ASAMBLEA')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  finesConceptFilter === 'MULTA_ASAMBLEA'
+                    ? 'bg-rose-700 text-white shadow'
+                    : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
+                }`}
+              >
+                Asambleas (S/ 50.00)
+              </button>
+              <button
+                onClick={() => setFinesConceptFilter('MULTA_FAENA')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  finesConceptFilter === 'MULTA_FAENA'
+                    ? 'bg-emerald-700 text-white shadow'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                Faenas (S/ 30.00)
+              </button>
+              <button
+                onClick={() => setFinesConceptFilter('MULTA_TARDANZA')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  finesConceptFilter === 'MULTA_TARDANZA'
+                    ? 'bg-amber-600 text-white shadow'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+                }`}
+              >
+                Tardanzas (S/ 20.00)
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setFinesStatusFilter('ALL')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                    finesStatusFilter === 'ALL' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-600'
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  onClick={() => setFinesStatusFilter('PENDIENTE')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                    finesStatusFilter === 'PENDIENTE' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600'
+                  }`}
+                >
+                  Pendientes
+                </button>
+                <button
+                  onClick={() => setFinesStatusFilter('PAGADO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                    finesStatusFilter === 'PAGADO' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600'
+                  }`}
+                >
+                  Cobradas
+                </button>
+              </div>
+
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Buscar socio, DNI, puesto..."
+                  value={finesSearch}
+                  onChange={(e) => setFinesSearch(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl w-48 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <button
+                onClick={fetchAllFines}
+                className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600"
+                title="Actualizar listado de multas"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Tabla General de Sanciones de Clientes */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Comerciante / Socio</th>
+                  <th className="py-3 px-4">DNI</th>
+                  <th className="py-3 px-4">Puesto</th>
+                  <th className="py-3 px-4">Concepto de Sanción</th>
+                  <th className="py-3 px-4">Causa / Período</th>
+                  <th className="py-3 px-4">Monto Multa</th>
+                  <th className="py-3 px-4">Estado</th>
+                  <th className="py-3 px-4">Vencimiento</th>
+                  <th className="py-3 px-4 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loadingAllFines ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                      Cargando registro unificado de multas y sanciones...
+                    </td>
+                  </tr>
+                ) : allFines
+                    .filter((f) => {
+                      if (finesConceptFilter !== 'ALL' && f.concept?.code !== finesConceptFilter) return false;
+                      if (finesStatusFilter !== 'ALL' && f.status !== finesStatusFilter) return false;
+                      if (finesSearch.trim()) {
+                        const q = finesSearch.toLowerCase();
+                        const mName = `${f.merchant?.lastName || ''} ${f.merchant?.firstName || ''}`.toLowerCase();
+                        const dni = (f.merchant?.dni || '').toLowerCase();
+                        const stall = (f.merchant?.stall?.code || '').toLowerCase();
+                        const period = (f.period || '').toLowerCase();
+                        if (!mName.includes(q) && !dni.includes(q) && !stall.includes(q) && !period.includes(q)) return false;
+                      }
+                      return true;
+                    }).length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
+                      No se encontraron registros de multas con los filtros seleccionados.
+                    </td>
+                  </tr>
+                ) : (
+                  allFines
+                    .filter((f) => {
+                      if (finesConceptFilter !== 'ALL' && f.concept?.code !== finesConceptFilter) return false;
+                      if (finesStatusFilter !== 'ALL' && f.status !== finesStatusFilter) return false;
+                      if (finesSearch.trim()) {
+                        const q = finesSearch.toLowerCase();
+                        const mName = `${f.merchant?.lastName || ''} ${f.merchant?.firstName || ''}`.toLowerCase();
+                        const dni = (f.merchant?.dni || '').toLowerCase();
+                        const stall = (f.merchant?.stall?.code || '').toLowerCase();
+                        const period = (f.period || '').toLowerCase();
+                        if (!mName.includes(q) && !dni.includes(q) && !stall.includes(q) && !period.includes(q)) return false;
+                      }
+                      return true;
+                    })
+                    .map((f: any) => (
+                      <tr key={f.id} className="hover:bg-slate-50 transition">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-800">
+                            {f.merchant?.lastName}, {f.merchant?.firstName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {f.merchant?.internalCode || ''}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-600">{f.merchant?.dni || '-'}</td>
+                        <td className="py-3 px-4 font-bold text-slate-700">
+                          {f.merchant?.stall?.code ? `Puesto ${f.merchant.stall.code}` : 'S/P'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              f.concept?.code === 'MULTA_ASAMBLEA'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                : f.concept?.code === 'MULTA_FAENA'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                            }`}
+                          >
+                            {f.concept?.name || f.concept?.code}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-600">
+                          {f.period}
+                        </td>
+                        <td className="py-3 px-4 font-black font-mono text-rose-700 text-xs">
+                          S/ {Number(f.amount).toFixed(2)}
+                        </td>
+                        <td className="py-3 px-4">
+                          {f.status === 'PAGADO' ? (
+                            <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-md">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              COBRADO EN CAJA
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-md">
+                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                              PENDIENTE
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
+                          {f.dueDate ? String(f.dueDate).split('T')[0] : '-'}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              onClick={() => openMerchantFinesModal(f.merchant)}
+                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                              title="Ver ficha de multas del comerciante"
+                            >
+                              <Coins className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Ficha</span>
+                            </button>
+                            {f.status === 'PENDIENTE' && (
+                              <a
+                                href="/caja"
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold shadow-sm transition"
+                                title="Ir a Caja para cobrar esta multa"
+                              >
+                                Cobrar
+                              </a>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
 
       {/* MODAL 1: Crear Nuevo Comerciante */}
       {isModalOpen && (
@@ -2901,6 +3302,129 @@ export default function PadronPage() {
           </div>
         </div>
       )}
-    </div>
+    
+      {/* MODAL DETALLE DE MULTAS Y SANCIONES DEL COMERCIANTE */}
+      {finesModalMerchant && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 border border-slate-200 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center text-rose-600">
+                  <Coins className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">
+                    Sanciones y Multas del Comerciante
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Historial de inasistencias a asambleas, faenas y tardanzas estatutarias
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setFinesModalMerchant(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Ficha rápida del comerciante */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Comerciante</span>
+                <span className="font-bold text-slate-800">{finesModalMerchant.lastName}, {finesModalMerchant.firstName}</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">DNI</span>
+                <span className="font-mono font-bold text-slate-700">{finesModalMerchant.dni || '-'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Puesto / Sector</span>
+                <span className="font-bold text-slate-800">{finesModalMerchant.stall?.code ? `Puesto ${finesModalMerchant.stall.code}` : 'Sin puesto asignado'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total en Multas</span>
+                <span className="font-mono font-black text-rose-700 text-sm">
+                  S/ {merchantFinesList.filter(o => o.status === 'PENDIENTE').reduce((sum, o) => sum + Number(o.amount || 0), 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Listado de multas */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100/70 text-slate-500 font-bold uppercase tracking-wider sticky top-0 bg-slate-100">
+                  <tr>
+                    <th className="p-3">Concepto</th>
+                    <th className="p-3">Código / Período</th>
+                    <th className="p-3">Monto</th>
+                    <th className="p-3">Estado</th>
+                    <th className="p-3">Fecha Venc.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loadingMerchantFines ? (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-400">
+                        Cargando detalle de multas del socio...
+                      </td>
+                    </tr>
+                  ) : merchantFinesList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-400">
+                        Este comerciante no registra multas ni sanciones en el sistema.
+                      </td>
+                    </tr>
+                  ) : (
+                    merchantFinesList.map((ob: any) => (
+                      <tr key={ob.id} className="hover:bg-slate-50 transition">
+                        <td className="p-3 font-semibold text-slate-800">
+                          {ob.concept?.name || ob.concept?.code}
+                        </td>
+                        <td className="p-3 font-mono text-[11px] text-slate-500">
+                          {ob.period}
+                        </td>
+                        <td className="p-3 font-black font-mono text-rose-700">
+                          S/ {Number(ob.amount).toFixed(2)}
+                        </td>
+                        <td className="p-3">
+                          {ob.status === 'PAGADO' ? (
+                            <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-md">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              PAGADO EN CAJA
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 text-[10px] font-black px-2 py-0.5 rounded-md">
+                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                              PENDIENTE
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 font-mono text-[11px] text-slate-500">
+                          {ob.dueDate ? String(ob.dueDate).split('T')[0] : '-'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+              <span className="text-[11px] text-slate-500 italic">
+                * Conforme al Art. 24 del Estatuto, las multas pendientes inhabilitan el derecho a voto.
+              </span>
+              <button
+                onClick={() => setFinesModalMerchant(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow"
+              >
+                Cerrar Ficha
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+</div>
   );
 }

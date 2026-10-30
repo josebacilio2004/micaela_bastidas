@@ -28,6 +28,7 @@ import {
   RefreshCw,
   ChevronRight,
   UserX,
+  Save,
 } from 'lucide-react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
@@ -108,6 +109,7 @@ export default function FaenasPage() {
   const [dniOrCode, setDniOrCode] = useState('');
   const [scanMessage, setScanMessage] = useState<any>(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
 
   // History filters
   const [historyYear, setHistoryYear] = useState<string>('2026');
@@ -304,6 +306,32 @@ export default function FaenasPage() {
       await fetchFaenaDetails(selectedFaena.id);
     } catch (err: any) {
       alert(err.message || 'Error al actualizar asistencia en bloque');
+    }
+  };
+
+  const handleSaveAttendanceAndFines = async () => {
+    if (!selectedFaena) return;
+    const absCount = absentList.length;
+    const attCount = attendancesList.length;
+    const fineAmt = Number(selectedFaena.fineAmount) || 30.00;
+    const confirmMsg = `¿Desea GUARDAR Y FINALIZAR la asistencia de esta faena comunal?\n\n• Socios Asistentes: ${attCount}\n• Socios Inasistentes: ${absCount}\n\nSe aplicará una multa de S/ ${fineAmt.toFixed(2)} a cada socio inasistente y se registrará automáticamente en el Padrón de Comerciantes y Caja.`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingAttendance(true);
+    try {
+      const res = await apiRequest(`/faenas/${selectedFaena.id}/save-attendance-and-fines`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      alert(`✅ ${res.message || 'Asistencia de faena guardada con éxito'}`);
+      await fetchFaenas(selectedFaena.id);
+      await fetchFaenaDetails(selectedFaena.id);
+      await fetchFines(selectedFaena.id);
+      setActiveTab('MULTAS');
+    } catch (err: any) {
+      alert(err.message || 'Error al guardar asistencia de faena');
+    } finally {
+      setIsSavingAttendance(false);
     }
   };
 
@@ -725,6 +753,15 @@ export default function FaenasPage() {
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                      <button
+                        onClick={handleSaveAttendanceAndFines}
+                        disabled={isSavingAttendance}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm transition"
+                        title="Guardar asistencia y sancionar ausentes"
+                      >
+                        <Save className="w-3 h-3" />
+                        {isSavingAttendance ? 'Guardando...' : 'Guardar y Multar'}
+                      </button>
                       {selectedFaena.status !== 'FINALIZADA' && (
                         <button
                           onClick={handleFinalizeFaena}
@@ -916,19 +953,27 @@ export default function FaenasPage() {
                         <UserX className="w-3.5 h-3.5" />
                         Ausentes ({absentList.length})
                       </button>
-                      {selectedFaena.status === 'FINALIZADA' && (
-                        <button
-                          onClick={() => setActiveTab('MULTAS')}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                            activeTab === 'MULTAS'
-                              ? 'bg-rose-700 text-white shadow-sm'
-                              : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
-                          }`}
-                        >
-                          <Coins className="w-3.5 h-3.5" />
-                          Multas ({finesList.length})
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setActiveTab('MULTAS')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                          activeTab === 'MULTAS'
+                            ? 'bg-rose-700 text-white shadow-sm'
+                            : 'bg-white text-rose-700 border border-rose-200 hover:bg-rose-50'
+                        }`}
+                      >
+                        <Coins className="w-3.5 h-3.5" />
+                        Multas ({finesList.length})
+                      </button>
+
+                      <button
+                        onClick={handleSaveAttendanceAndFines}
+                        disabled={isSavingAttendance}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-1.5 transition ml-1"
+                        title="Guardar toda la asistencia y aplicar multas a los inasistentes"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{isSavingAttendance ? 'Guardando...' : `Guardar Asistencia y Aplicar Multas (S/ ${Number(selectedFaena.fineAmount || 30).toFixed(2)})`}</span>
+                      </button>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1021,8 +1066,26 @@ export default function FaenasPage() {
                               </tr>
                             ) : filteredFines.length === 0 ? (
                               <tr>
-                                <td colSpan={7} className="py-10 text-center text-slate-400">
-                                  No se registran multas aplicadas para esta faena.
+                                <td colSpan={7} className="py-10 text-center text-slate-500">
+                                  {finesList.length === 0 ? (
+                                    <div className="max-w-md mx-auto space-y-2 py-4">
+                                      <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+                                      <p className="font-bold text-slate-700 text-xs">Aún no se han generado las multas de esta faena.</p>
+                                      <p className="text-[11px] text-slate-500">
+                                        Al terminar de pasar lista, haga clic en el botón verde <strong>"Guardar Asistencia y Aplicar Multas"</strong> para registrar a los presentes y sancionar automáticamente a los socios ausentes con S/ {Number(selectedFaena.fineAmount || 30).toFixed(2)}.
+                                      </p>
+                                      <button
+                                        onClick={handleSaveAttendanceAndFines}
+                                        disabled={isSavingAttendance}
+                                        className="mt-2 inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow"
+                                      >
+                                        <Save className="w-3.5 h-3.5" />
+                                        <span>Guardar Asistencia y Sancionar Ausentes Ahora</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    'No se encontraron multas con el criterio de búsqueda.'
+                                  )}
                                 </td>
                               </tr>
                             ) : (

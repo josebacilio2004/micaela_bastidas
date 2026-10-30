@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_theme.dart';
@@ -64,8 +65,22 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      String detail = 'Credenciales inválidas o sin conexión a $_currentServerUrl';
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout) {
+          detail = 'Tiempo de espera agotado al conectar a $_currentServerUrl.\nVerifique que la IP de la PC sea correcta y que el Firewall de Windows permita el puerto 80.';
+        } else if (e.type == DioExceptionType.connectionError) {
+          detail = 'Sin conexión con el servidor en $_currentServerUrl.\nVerifique que el celular y la PC compartan la misma red y que la IP sea la de la PC (no la del celular).';
+        } else if (e.response?.statusCode == 401) {
+          detail = 'Usuario o contraseña incorrectos. Verifique sus credenciales.';
+        } else if (e.response?.statusCode == 404) {
+          detail = 'Servidor alcanzado pero ruta /api no encontrada. Verifique que la URL termine en /api';
+        } else {
+          detail = 'Error ${e.response?.statusCode ?? "de red"}: ${e.message ?? "Fallo de conexión"} ($_currentServerUrl)';
+        }
+      }
       setState(() {
-        _errorMessage = 'Credenciales inválidas o sin conexión a $_currentServerUrl';
+        _errorMessage = detail;
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -89,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Seleccione o ingrese la URL del backend:\n• Emulador Android: http://10.0.2.2/api\n• Dispositivo Wi-Fi: http://[IP_DE_TU_PC]/api',
+              'Seleccione o ingrese la URL del backend:\n• Dispositivo Wi-Fi: http://192.168.1.3/api\n• Emulador Android: http://10.0.2.2/api\n\n* Nota: Use la IPv4 de su PC (vea con ipconfig), no la IP de datos móviles del celular (10.x.x.x).',
               style: TextStyle(fontSize: 11, color: Colors.black54),
             ),
             const SizedBox(height: 12),
@@ -104,7 +119,12 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 10),
             Wrap(
               spacing: 6,
+              runSpacing: 4,
               children: [
+                ActionChip(
+                  label: const Text('192.168.1.3 (PC Wi-Fi)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                  onPressed: () => serverCtrl.text = 'http://192.168.1.3/api',
+                ),
                 ActionChip(
                   label: const Text('10.0.2.2 (Emulador)', style: TextStyle(fontSize: 10)),
                   onPressed: () => serverCtrl.text = 'http://10.0.2.2/api',

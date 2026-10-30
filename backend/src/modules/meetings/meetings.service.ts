@@ -160,13 +160,210 @@ export class MeetingsService {
           registeredById: userId,
         },
       });
+
+      // Si la asamblea está FINALIZADA, remover multa pendiente por haber estado ausente
+      if (meeting.status === MeetingStatus.FINALIZADA) {
+        const period = `FALTA-${meeting.id.slice(0, 8)}`;
+        const fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_ASAMBLEA' } });
+        if (fineConcept) {
+          await this.prisma.paymentObligation.deleteMany({
+            where: {
+              merchantId,
+              conceptId: fineConcept.id,
+              period,
+              status: ObligationStatus.PENDIENTE,
+            },
+          });
+        }
+      }
     } else if (!present && existing) {
       await this.prisma.attendanceEvent.delete({
         where: { id: existing.id },
       });
+
+      // Si la asamblea está FINALIZADA y se desmarca como ausente, generar multa
+      if (meeting.status === MeetingStatus.FINALIZADA) {
+        let fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_ASAMBLEA' } });
+        if (!fineConcept) {
+          fineConcept = await this.prisma.paymentConcept.create({
+            data: {
+              code: 'MULTA_ASAMBLEA',
+              name: 'Multa por Inasistencia a Asamblea',
+              periodicity: 'POR_USO' as any,
+              description: 'Sanción económica por inasistencia no justificada a asamblea general',
+            },
+          });
+        }
+        const period = `FALTA-${meeting.id.slice(0, 8)}`;
+        const mDate = new Date(meeting.date);
+        const due = new Date(meeting.date);
+        due.setDate(due.getDate() + 7);
+
+        const exists = await this.prisma.paymentObligation.findUnique({
+          where: {
+            merchantId_conceptId_period: {
+              merchantId,
+              conceptId: fineConcept.id,
+              period,
+            },
+          },
+        });
+        if (!exists) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId,
+              conceptId: fineConcept.id,
+              period,
+              year: mDate.getFullYear(),
+              month: mDate.getMonth() + 1,
+              dueDate: due,
+              amount: 50.00,
+              status: ObligationStatus.PENDIENTE,
+            },
+          });
+        }
+      }
     }
 
     return { success: true, present };
+  }
+
+  async saveAttendanceAndFines(
+    meetingId: string,
+    items?: { merchantId: string; present: boolean }[],
+    userId?: string,
+  ) {
+    const meeting = await this.prisma.meeting.findUnique({
+      where: { id: meetingId },
+      include: { attendances: true },
+    });
+    if (!meeting) throw new NotFoundException('Reunión no encontrada');
+
+    // 1. Guardar o actualizar asistencias si se envían en el cuerpo
+    if (items && items.length > 0) {
+      for (const item of items) {
+        const existing = await this.prisma.attendanceEvent.findUnique({
+          where: {
+            meetingId_merchantId: {
+              meetingId,
+              merchantId: item.merchantId,
+            },
+          },
+        });
+
+        if (item.present && !existing) {
+          const merchant = await this.prisma.merchant.findUnique({ where: { id: item.merchantId } });
+          if (merchant) {
+            await this.prisma.attendanceEvent.create({
+              data: {
+                meetingId,
+                merchantId: item.merchantId,
+                dni: merchant.dni,
+                idempotencyKey: `att-save-${meetingId}-${item.merchantId}-${Date.now()}`,
+                registeredById: userId || merchant.id,
+              },
+            });
+          }
+        } else if (!item.present && existing) {
+          await this.prisma.attendanceEvent.delete({
+            where: { id: existing.id },
+          });
+        }
+      }
+    }
+
+    // 2. Marcar estado como FINALIZADA
+    const updated = await this.prisma.meeting.update({
+      where: { id: meetingId },
+      data: { status: MeetingStatus.FINALIZADA },
+    });
+
+    // 3. Obtener asistencias actualizadas y socios activos
+    const currentAttendances = await this.prisma.attendanceEvent.findMany({
+      where: { meetingId },
+    });
+    const attendedIds = new Set(currentAttendances.map((a) => a.merchantId));
+
+    const allSocios = await this.prisma.merchant.findMany({
+      where: { merchantType: { code: 'SOCIO' }, isDeleted: false, status: 'ACTIVO' },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    // 4. Asegurar concepto MULTA_ASAMBLEA
+    let faltaConcept = await this.prisma.paymentConcept.findUnique({
+      where: { code: 'MULTA_ASAMBLEA' },
+    });
+    if (!faltaConcept) {
+      faltaConcept = await this.prisma.paymentConcept.create({
+        data: {
+          code: 'MULTA_ASAMBLEA',
+          name: 'Multa por Inasistencia a Asamblea',
+          periodicity: 'POR_USO' as any,
+          description: 'Sanción económica por inasistencia no justificada a asamblea general',
+        },
+      });
+    }
+
+    const period = `FALTA-${meeting.id.slice(0, 8)}`;
+    const mDate = new Date(meeting.date);
+    const due = new Date(meeting.date);
+    due.setDate(due.getDate() + 7);
+
+    let finesCount = 0;
+
+    for (const socio of allSocios) {
+      const isPresent = attendedIds.has(socio.id);
+      if (!isPresent) {
+        // Inasistente: asegurar multa en PENDIENTE
+        const exists = await this.prisma.paymentObligation.findUnique({
+          where: {
+            merchantId_conceptId_period: {
+              merchantId: socio.id,
+              conceptId: faltaConcept.id,
+              period,
+            },
+          },
+        });
+
+        if (!exists) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: socio.id,
+              conceptId: faltaConcept.id,
+              period,
+              year: mDate.getFullYear(),
+              month: mDate.getMonth() + 1,
+              dueDate: due,
+              amount: 50.00,
+              status: ObligationStatus.PENDIENTE,
+            },
+          });
+          finesCount++;
+        }
+      } else {
+        // Presente: si tenía multa PENDIENTE generada previamente, eliminarla
+        await this.prisma.paymentObligation.deleteMany({
+          where: {
+            merchantId: socio.id,
+            conceptId: faltaConcept.id,
+            period,
+            status: ObligationStatus.PENDIENTE,
+          },
+        });
+      }
+    }
+
+    const fines = await this.getFines(meetingId);
+
+    return {
+      ...updated,
+      totalSocios: allSocios.length,
+      attendedCount: currentAttendances.length,
+      absentCount: allSocios.length - currentAttendances.length,
+      finesGenerated: finesCount,
+      fines,
+      message: `Asistencia guardada y finalizada. ${currentAttendances.length} socios presentes y ${allSocios.length - currentAttendances.length} socios inasistentes sancionados con S/ 50.00.`,
+    };
   }
 
   async bulkUpdateAttendance(
@@ -222,11 +419,14 @@ export class MeetingsService {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) throw new NotFoundException('Reunión no encontrada');
 
-    const period = `FALTA-${meeting.id.slice(0, 8)}`;
+    const periodFalta = `FALTA-${meeting.id.slice(0, 8)}`;
+    const periodTard = `TARD-${meeting.id.slice(0, 8)}`;
     const fines = await this.prisma.paymentObligation.findMany({
       where: {
-        period,
-        concept: { code: 'MULTA_ASAMBLEA' },
+        OR: [
+          { period: periodFalta },
+          { period: periodTard },
+        ],
       },
       include: {
         merchant: {
@@ -236,6 +436,7 @@ export class MeetingsService {
           },
         },
         payment: true,
+        concept: true,
       },
       orderBy: [
         { merchant: { lastName: 'asc' } },

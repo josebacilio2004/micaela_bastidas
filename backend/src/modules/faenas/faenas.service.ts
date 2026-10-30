@@ -313,9 +313,188 @@ export class FaenasService {
       await this.prisma.faenaAttendance.delete({
         where: { id: existing.id },
       });
+
+      // Si la faena está FINALIZADA y se desmarca como ausente, generar multa
+      if (faena.status === MeetingStatus.FINALIZADA) {
+        let fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_FAENA' } });
+        if (!fineConcept) {
+          fineConcept = await this.prisma.paymentConcept.create({
+            data: {
+              code: 'MULTA_FAENA',
+              name: 'Multa por Inasistencia a Faena de Limpieza',
+              periodicity: Periodicity.POR_USO,
+              description: 'Sanción por no participar en faena comunal',
+            },
+          });
+        }
+        const fineAmount = Number(faena.fineAmount) || 30.00;
+        const period = `FAENA-${faena.id.slice(0, 8)}`;
+        const fDate = new Date(faena.date);
+        const due = new Date(faena.date);
+        due.setDate(due.getDate() + 7);
+
+        const exists = await this.prisma.paymentObligation.findUnique({
+          where: {
+            merchantId_conceptId_period: {
+              merchantId,
+              conceptId: fineConcept.id,
+              period,
+            },
+          },
+        });
+        if (!exists) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId,
+              conceptId: fineConcept.id,
+              period,
+              year: fDate.getFullYear(),
+              month: fDate.getMonth() + 1,
+              dueDate: due,
+              amount: fineAmount,
+              status: ObligationStatus.PENDIENTE,
+            },
+          });
+        }
+      }
     }
 
     return { success: true, present };
+  }
+
+  async saveAttendanceAndFines(
+    faenaId: string,
+    items?: { merchantId: string; present: boolean }[],
+    userId?: string,
+  ) {
+    const faena = await this.prisma.faena.findUnique({
+      where: { id: faenaId },
+      include: { attendances: true },
+    });
+    if (!faena) throw new NotFoundException('Faena no encontrada');
+
+    // 1. Guardar o actualizar asistencias si se envían en el cuerpo
+    if (items && items.length > 0) {
+      for (const item of items) {
+        const existing = await this.prisma.faenaAttendance.findUnique({
+          where: {
+            faenaId_merchantId: {
+              faenaId,
+              merchantId: item.merchantId,
+            },
+          },
+        });
+
+        if (item.present && !existing) {
+          const merchant = await this.prisma.merchant.findUnique({ where: { id: item.merchantId } });
+          if (merchant) {
+            await this.prisma.faenaAttendance.create({
+              data: {
+                faenaId,
+                merchantId: item.merchantId,
+                dni: merchant.dni,
+                registeredById: userId || merchant.id,
+              },
+            });
+          }
+        } else if (!item.present && existing) {
+          await this.prisma.faenaAttendance.delete({
+            where: { id: existing.id },
+          });
+        }
+      }
+    }
+
+    // 2. Marcar estado como FINALIZADA
+    const updated = await this.prisma.faena.update({
+      where: { id: faenaId },
+      data: { status: MeetingStatus.FINALIZADA },
+    });
+
+    // 3. Obtener asistencias y socios activos
+    const currentAttendances = await this.prisma.faenaAttendance.findMany({
+      where: { faenaId },
+    });
+    const attendedIds = new Set(currentAttendances.map((a) => a.merchantId));
+
+    const allSocios = await this.prisma.merchant.findMany({
+      where: { merchantType: { code: 'SOCIO' }, isDeleted: false, status: 'ACTIVO' },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    // 4. Asegurar concepto MULTA_FAENA
+    let fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_FAENA' } });
+    if (!fineConcept) {
+      fineConcept = await this.prisma.paymentConcept.create({
+        data: {
+          code: 'MULTA_FAENA',
+          name: 'Multa por Inasistencia a Faena de Limpieza',
+          periodicity: Periodicity.POR_USO,
+          description: 'Sanción por no participar en faena comunal',
+        },
+      });
+    }
+
+    const fineAmount = Number(faena.fineAmount) || 30.00;
+    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const fDate = new Date(faena.date);
+    const due = new Date(faena.date);
+    due.setDate(due.getDate() + 7);
+
+    let finesCount = 0;
+
+    for (const socio of allSocios) {
+      const isPresent = attendedIds.has(socio.id);
+      if (!isPresent) {
+        const exists = await this.prisma.paymentObligation.findUnique({
+          where: {
+            merchantId_conceptId_period: {
+              merchantId: socio.id,
+              conceptId: fineConcept.id,
+              period,
+            },
+          },
+        });
+
+        if (!exists) {
+          await this.prisma.paymentObligation.create({
+            data: {
+              merchantId: socio.id,
+              conceptId: fineConcept.id,
+              period,
+              year: fDate.getFullYear(),
+              month: fDate.getMonth() + 1,
+              dueDate: due,
+              amount: fineAmount,
+              status: ObligationStatus.PENDIENTE,
+            },
+          });
+          finesCount++;
+        }
+      } else {
+        // Presente: si tenía multa PENDIENTE, removerla
+        await this.prisma.paymentObligation.deleteMany({
+          where: {
+            merchantId: socio.id,
+            conceptId: fineConcept.id,
+            period,
+            status: ObligationStatus.PENDIENTE,
+          },
+        });
+      }
+    }
+
+    const fines = await this.getFines(faenaId);
+
+    return {
+      ...updated,
+      totalSocios: allSocios.length,
+      attendedCount: currentAttendances.length,
+      absentCount: allSocios.length - currentAttendances.length,
+      finesGenerated: finesCount,
+      fines,
+      message: `Asistencia de faena guardada y finalizada. ${currentAttendances.length} socios presentes y ${allSocios.length - currentAttendances.length} socios inasistentes sancionados con S/ ${fineAmount.toFixed(2)}.`,
+    };
   }
 
   async bulkUpdateAttendance(
@@ -385,6 +564,7 @@ export class FaenasService {
           },
         },
         payment: true,
+        concept: true,
       },
       orderBy: [
         { merchant: { lastName: 'asc' } },

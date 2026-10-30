@@ -13,7 +13,11 @@ export class ObligationsService {
         ...(merchantId ? { merchantId } : {}),
         ...(period ? { period } : {}),
         ...(status ? { status } : {}),
-        ...(conceptCode ? { concept: { code: conceptCode } } : {}),
+        ...(conceptCode
+          ? conceptCode.includes(',')
+            ? { concept: { code: { in: conceptCode.split(',').map((c) => c.trim()) } } }
+            : { concept: { code: conceptCode } }
+          : {}),
       },
       include: {
         merchant: {

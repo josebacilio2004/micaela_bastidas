@@ -39,6 +39,13 @@ export class MerchantsService {
             documents: true,
           },
         },
+        obligations: {
+          where: {
+            status: 'PENDIENTE',
+            concept: { code: { in: ['MULTA_ASAMBLEA', 'MULTA_FAENA', 'MULTA_TARDANZA'] } },
+          },
+          include: { concept: true },
+        },
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });

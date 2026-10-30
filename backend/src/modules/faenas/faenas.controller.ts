@@ -85,6 +85,16 @@ export class FaenasController {
     return this.faenasService.bulkUpdateAttendance(id, body.items, user?.id);
   }
 
+  @Post(':id/save-attendance-and-fines')
+  @ApiOperation({ summary: 'Guardar toda la asistencia de faena y aplicar multas automáticas a los inasistentes' })
+  async saveAttendanceAndFines(
+    @Param('id') id: string,
+    @Body() body: { items?: { merchantId: string; present: boolean }[] },
+    @CurrentUser() user: any,
+  ) {
+    return this.faenasService.saveAttendanceAndFines(id, body?.items, user?.id);
+  }
+
   @Post(':id/finalize')
   @ApiOperation({ summary: 'Finalizar faena y aplicar multas automáticas a socios ausentes' })
   async finalize(@Param('id') id: string) {

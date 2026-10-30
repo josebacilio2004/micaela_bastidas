@@ -64,6 +64,16 @@ export class MeetingsController {
     return this.meetingsService.updateStatus(id, status);
   }
 
+  @Post(':id/save-attendance-and-fines')
+  @ApiOperation({ summary: 'Guardar toda la asistencia y aplicar multas automáticas a los socios inasistentes' })
+  saveAttendanceAndFines(
+    @Param('id') meetingId: string,
+    @Body() dto: { items?: { merchantId: string; present: boolean }[] },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.meetingsService.saveAttendanceAndFines(meetingId, dto?.items, userId);
+  }
+
   @Post(':id/attendance')
   @ApiOperation({ summary: 'Registrar asistencia mediante lectura de QR o DNI' })
   registerAttendance(
