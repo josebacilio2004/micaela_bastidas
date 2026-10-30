@@ -291,14 +291,14 @@ export default function AlquileresPage() {
   };
 
   const handleDeleteContract = async (contract: any) => {
-    if (!confirm(`¿Está seguro de rescindir/eliminar el contrato de ${contract.tenantName} (Puesto ${contract.stallCode})? Esta acción liberará el puesto.`)) return;
+    if (!confirm(`¿Está seguro de eliminar o rescindir el contrato de ${contract.tenantName} (Puesto ${contract.stallCode})? Esta acción liberará el puesto asignado.`)) return;
 
     try {
       if (contract.id && !contract.id.startsWith('MB-INQ-')) {
-        await apiRequest(`/rentals/${contract.id}`, { method: 'DELETE' });
+        await apiRequest(`/rentals/${contract.id}?action=delete`, { method: 'DELETE' });
       }
       setContracts((prev) => prev.filter((c) => c.id !== contract.id));
-      alert('✓ Contrato rescindido y puesto liberado');
+      alert('✓ Contrato eliminado exitosamente y puesto liberado.');
       fetchData();
     } catch (err: any) {
       alert('Error al eliminar contrato: ' + (err.message || 'Error de servidor'));
@@ -518,14 +518,31 @@ export default function AlquileresPage() {
     }
   };
 
+  // Water Tenants List (Real DB Contracts or Fallback)
+  const waterTenantsList = useMemo(() => {
+    if (contracts.length > 0) {
+      return contracts.map((c: any) => ({
+        id: c.id,
+        merchantId: c.merchantId,
+        code: c.contractNumber,
+        name: c.tenantName,
+        dni: c.tenantDni,
+        stallNumber: c.stallCode,
+        monthlyRent: Number(c.monthlyRent),
+        businessCategory: c.businessCategory,
+      }));
+    }
+    return OFFICIAL_TENANTS;
+  }, [contracts]);
+
   // Filtered Water Tenants
   const filteredWaterTenants = useMemo(() => {
-    return OFFICIAL_TENANTS.filter((t) =>
+    return waterTenantsList.filter((t: any) =>
       t.name.toLowerCase().includes(waterSearch.toLowerCase()) ||
       t.dni.includes(waterSearch) ||
       t.stallNumber.toLowerCase().includes(waterSearch.toLowerCase())
     );
-  }, [waterSearch]);
+  }, [waterTenantsList, waterSearch]);
 
   // Combined Contract List: DB Contracts + Official fallback
   const displayContracts = useMemo(() => {

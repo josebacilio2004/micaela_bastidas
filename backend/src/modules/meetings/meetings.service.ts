@@ -6,6 +6,20 @@ import { MeetingStatus, ObligationStatus } from '@prisma/client';
 export class MeetingsService {
   constructor(private prisma: PrismaService) {}
 
+  private formatMeetingPeriod(date: Date | string, meetingId: string, prefix: 'FALTA' | 'TARD' = 'FALTA'): string {
+    const d = new Date(date);
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
+    const monthNames = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    ];
+    const monthName = monthNames[d.getUTCMonth()];
+    const shortId = meetingId.slice(0, 8);
+    return `${day}/${month}/${year} (${monthName} ${year}) - ${prefix}-${shortId}`;
+  }
+
   async findAll(filters?: { date?: string; status?: any }) {
     const totalSocios = await this.prisma.merchant.count({
       where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
@@ -163,14 +177,14 @@ export class MeetingsService {
 
       // Si la asamblea está FINALIZADA, remover multa pendiente por haber estado ausente
       if (meeting.status === MeetingStatus.FINALIZADA) {
-        const period = `FALTA-${meeting.id.slice(0, 8)}`;
+        const shortId = meeting.id.slice(0, 8);
         const fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_ASAMBLEA' } });
         if (fineConcept) {
           await this.prisma.paymentObligation.deleteMany({
             where: {
               merchantId,
               conceptId: fineConcept.id,
-              period,
+              period: { contains: shortId },
               status: ObligationStatus.PENDIENTE,
             },
           });
@@ -194,18 +208,17 @@ export class MeetingsService {
             },
           });
         }
-        const period = `FALTA-${meeting.id.slice(0, 8)}`;
+        const shortId = meeting.id.slice(0, 8);
+        const period = this.formatMeetingPeriod(meeting.date, meeting.id, 'FALTA');
         const mDate = new Date(meeting.date);
         const due = new Date(meeting.date);
         due.setDate(due.getDate() + 7);
 
-        const exists = await this.prisma.paymentObligation.findUnique({
+        const exists = await this.prisma.paymentObligation.findFirst({
           where: {
-            merchantId_conceptId_period: {
-              merchantId,
-              conceptId: fineConcept.id,
-              period,
-            },
+            merchantId,
+            conceptId: fineConcept.id,
+            period: { contains: shortId },
           },
         });
         if (!exists) {
@@ -304,7 +317,8 @@ export class MeetingsService {
       });
     }
 
-    const period = `FALTA-${meeting.id.slice(0, 8)}`;
+    const shortId = meeting.id.slice(0, 8);
+    const period = this.formatMeetingPeriod(meeting.date, meeting.id, 'FALTA');
     const mDate = new Date(meeting.date);
     const due = new Date(meeting.date);
     due.setDate(due.getDate() + 7);
@@ -315,13 +329,11 @@ export class MeetingsService {
       const isPresent = attendedIds.has(socio.id);
       if (!isPresent) {
         // Inasistente: asegurar multa en PENDIENTE
-        const exists = await this.prisma.paymentObligation.findUnique({
+        const exists = await this.prisma.paymentObligation.findFirst({
           where: {
-            merchantId_conceptId_period: {
-              merchantId: socio.id,
-              conceptId: faltaConcept.id,
-              period,
-            },
+            merchantId: socio.id,
+            conceptId: faltaConcept.id,
+            period: { contains: shortId },
           },
         });
 
@@ -346,7 +358,7 @@ export class MeetingsService {
           where: {
             merchantId: socio.id,
             conceptId: faltaConcept.id,
-            period,
+            period: { contains: shortId },
             status: ObligationStatus.PENDIENTE,
           },
         });
@@ -388,10 +400,10 @@ export class MeetingsService {
     });
     if (!meeting) throw new NotFoundException('Reunión no encontrada');
 
-    const period = `FALTA-${meeting.id.slice(0, 8)}`;
+    const shortId = meeting.id.slice(0, 8);
     const paidFines = await this.prisma.paymentObligation.count({
       where: {
-        period,
+        period: { contains: shortId },
         status: ObligationStatus.PAGADO,
       },
     });
@@ -402,7 +414,7 @@ export class MeetingsService {
 
     // Clean up unpaid fine obligations
     await this.prisma.paymentObligation.deleteMany({
-      where: { period },
+      where: { period: { contains: shortId } },
     });
 
     // Delete attendance events
@@ -419,14 +431,10 @@ export class MeetingsService {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId } });
     if (!meeting) throw new NotFoundException('Reunión no encontrada');
 
-    const periodFalta = `FALTA-${meeting.id.slice(0, 8)}`;
-    const periodTard = `TARD-${meeting.id.slice(0, 8)}`;
+    const shortId = meeting.id.slice(0, 8);
     const fines = await this.prisma.paymentObligation.findMany({
       where: {
-        OR: [
-          { period: periodFalta },
-          { period: periodTard },
-        ],
+        period: { contains: shortId },
       },
       include: {
         merchant: {
@@ -487,19 +495,18 @@ export class MeetingsService {
       }
 
       if (faltaConcept && absentSocios.length > 0) {
-        const period = `FALTA-${meeting.id.slice(0, 8)}`;
+        const shortId = meeting.id.slice(0, 8);
+        const period = this.formatMeetingPeriod(meeting.date, meeting.id, 'FALTA');
         const mDate = new Date(meeting.date);
         const due = new Date(meeting.date);
         due.setDate(due.getDate() + 7);
 
         for (const socio of absentSocios) {
-          const exists = await this.prisma.paymentObligation.findUnique({
+          const exists = await this.prisma.paymentObligation.findFirst({
             where: {
-              merchantId_conceptId_period: {
-                merchantId: socio.id,
-                conceptId: faltaConcept.id,
-                period,
-              },
+              merchantId: socio.id,
+              conceptId: faltaConcept.id,
+              period: { contains: shortId },
             },
           });
 
@@ -598,14 +605,13 @@ export class MeetingsService {
           });
 
           if (tardanzaConcept) {
-            const period = `TARD-${meeting.id.slice(0, 8)}`;
-            const obExists = await this.prisma.paymentObligation.findUnique({
+            const shortId = meeting.id.slice(0, 8);
+            const period = this.formatMeetingPeriod(meeting.date, meeting.id, 'TARD');
+            const obExists = await this.prisma.paymentObligation.findFirst({
               where: {
-                merchantId_conceptId_period: {
-                  merchantId: merchant.id,
-                  conceptId: tardanzaConcept.id,
-                  period,
-                },
+                merchantId: merchant.id,
+                conceptId: tardanzaConcept.id,
+                period: { contains: shortId },
               },
             });
 

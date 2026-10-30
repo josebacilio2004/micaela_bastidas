@@ -179,6 +179,56 @@ export class RentalsService {
     const endDate = new Date(startDate);
     endDate.setMonth(startDate.getMonth() + months);
 
+    // 3.5. Buscar o crear el Comerciante de tipo INQUILINO en la tabla Merchant para sincronizar con el Padrón
+    let merchantId = dto.merchantId || null;
+    if (dto.tenantDni) {
+      let merchant = await this.prisma.merchant.findUnique({
+        where: { dni: dto.tenantDni.trim() },
+      });
+
+      if (!merchant) {
+        const inquilinoType = await this.prisma.merchantType.findFirst({
+          where: { code: 'INQUILINO' },
+        });
+
+        if (inquilinoType) {
+          const parts = dto.tenantName.trim().split(' ');
+          const firstName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+          const lastName = parts.length > 1 ? parts[0] : 'Inquilino';
+          const countM = await this.prisma.merchant.count();
+          const internalCode = `INQ-${String(countM + 1).padStart(4, '0')}`;
+          const qrCode = `MB-INQ-${dto.tenantDni.trim()}`;
+
+          merchant = await this.prisma.merchant.create({
+            data: {
+              internalCode,
+              qrCode,
+              firstName,
+              lastName,
+              dni: dto.tenantDni.trim(),
+              phone: dto.tenantPhone?.trim() || null,
+              merchantType: { connect: { id: inquilinoType.id } },
+              stall: stall?.id ? { connect: { id: stall.id } } : undefined,
+              businessCategory: dto.businessCategory?.trim() || 'Comercio General',
+              status: 'ACTIVO',
+              isDeleted: false,
+            },
+          });
+        }
+      } else {
+        if (!merchant.stallId) {
+          await this.prisma.merchant.update({
+            where: { id: merchant.id },
+            data: { stallId: stall.id },
+          });
+        }
+      }
+
+      if (merchant) {
+        merchantId = merchant.id;
+      }
+    }
+
     // 4. Crear contrato e installments en transacción
     const contract = await this.prisma.$transaction(async (tx) => {
       // Marcar puesto como ocupado
@@ -200,7 +250,7 @@ export class RentalsService {
           tenantDni: dto.tenantDni.trim(),
           tenantPhone: dto.tenantPhone?.trim() || null,
           businessCategory: dto.businessCategory?.trim() || 'Comercio General',
-          merchantId: dto.merchantId || null,
+          merchantId: merchantId,
           startDate,
           endDate,
           monthsCount: months,
@@ -243,7 +293,7 @@ export class RentalsService {
     const contract = await this.prisma.stallRentalContract.findUnique({ where: { id } });
     if (!contract) throw new NotFoundException('Contrato de alquiler no encontrado');
 
-    return this.prisma.stallRentalContract.update({
+    const updated = await this.prisma.stallRentalContract.update({
       where: { id },
       data: {
         ...(dto.tenantName ? { tenantName: dto.tenantName.trim() } : {}),
@@ -254,6 +304,23 @@ export class RentalsService {
         ...(dto.notes !== undefined ? { notes: dto.notes?.trim() || null } : {}),
       },
     });
+
+    if (contract.merchantId && (dto.tenantName || dto.tenantPhone !== undefined || dto.businessCategory)) {
+      const parts = (dto.tenantName || contract.tenantName).trim().split(' ');
+      await this.prisma.merchant.update({
+        where: { id: contract.merchantId },
+        data: {
+          ...(dto.tenantName ? {
+            firstName: parts.length > 1 ? parts.slice(1).join(' ') : parts[0],
+            lastName: parts.length > 1 ? parts[0] : 'Inquilino',
+          } : {}),
+          ...(dto.tenantPhone !== undefined ? { phone: dto.tenantPhone?.trim() || null } : {}),
+          ...(dto.businessCategory ? { businessCategory: dto.businessCategory.trim() } : {}),
+        },
+      }).catch(() => null);
+    }
+
+    return updated;
   }
 
   async payInstallment(
@@ -405,5 +472,31 @@ export class RentalsService {
         'QUINTA (DE LA RESOLUCIÓN): El retraso de dos cuotas consecutivas facultará la reversión inmediata del puesto a favor de la asociación.',
       ],
     };
+  }
+
+  async delete(id: string) {
+    const contract = await this.prisma.stallRentalContract.findUnique({
+      where: { id },
+      include: { installments: true },
+    });
+    if (!contract) throw new NotFoundException('Contrato de alquiler no encontrado');
+
+    const paidCount = contract.installments.filter((i) => i.status === 'PAGADO').length;
+    if (paidCount > 0) {
+      throw new BadRequestException(`No se puede eliminar el contrato porque ya registra ${paidCount} cuotas pagadas. En su lugar, rescíndalo.`);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.stallRentalInstallment.deleteMany({ where: { contractId: id } });
+      await tx.stallRentalContract.delete({ where: { id } });
+      if (contract.stallId) {
+        await tx.marketStall.update({
+          where: { id: contract.stallId },
+          data: { status: StallStatus.LIBRE, observations: null },
+        });
+      }
+    });
+
+    return { message: `Contrato ${contract.contractNumber} eliminado exitosamente y puesto liberado.` };
   }
 }

@@ -160,7 +160,7 @@ export class PaymentsService {
           conceptId: dto.conceptId,
           obligationId: dto.obligationId,
           amount: dto.amount,
-          period: dto.period,
+          period: (obligation && obligation.period) ? obligation.period : (dto.period || 'N/A'),
           paymentMethod: dto.paymentMethod || PaymentMethod.EFECTIVO,
           cashRegisterId: registerId,
           collectedById: userId,

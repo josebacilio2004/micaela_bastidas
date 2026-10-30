@@ -83,8 +83,15 @@ export class RentalsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Rescindir o finalizar contrato de alquiler y liberar puesto' })
-  async terminate(@Param('id') id: string, @Query('reason') reason?: string) {
+  @ApiOperation({ summary: 'Eliminar o rescindir contrato de alquiler y liberar puesto' })
+  async remove(
+    @Param('id') id: string,
+    @Query('reason') reason?: string,
+    @Query('action') action?: string,
+  ) {
+    if (action === 'delete') {
+      return this.rentalsService.delete(id);
+    }
     return this.rentalsService.terminateContract(id, reason);
   }
 }

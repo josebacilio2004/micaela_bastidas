@@ -6,6 +6,20 @@ import { MeetingStatus, Periodicity, ObligationStatus } from '@prisma/client';
 export class FaenasService {
   constructor(private prisma: PrismaService) {}
 
+  private formatFaenaPeriod(date: Date | string, faenaId: string): string {
+    const d = new Date(date);
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
+    const monthNames = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Setiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    ];
+    const monthName = monthNames[d.getUTCMonth()];
+    const shortId = faenaId.slice(0, 8);
+    return `${day}/${month}/${year} (${monthName} ${year}) - FAENA-${shortId}`;
+  }
+
   async findAll() {
     const totalSocios = await this.prisma.merchant.count({
       where: { merchantType: { code: 'SOCIO' }, isDeleted: false },
@@ -136,14 +150,14 @@ export class FaenasService {
     });
 
     // Si ya existía multa pendiente generada al finalizar, eliminarla al registrar asistencia
-    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const shortId = faena.id.slice(0, 8);
     const fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_FAENA' } });
     if (fineConcept) {
       await this.prisma.paymentObligation.deleteMany({
         where: {
           merchantId: merchant.id,
           conceptId: fineConcept.id,
-          period,
+          period: { contains: shortId },
           status: ObligationStatus.PENDIENTE,
         },
       });
@@ -189,19 +203,18 @@ export class FaenasService {
 
     // 3. Create fines for absent socios
     const fineAmount = Number(faena.fineAmount) || 30.00;
-    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const shortId = faena.id.slice(0, 8);
+    const period = this.formatFaenaPeriod(faena.date, faena.id);
     const fDate = new Date(faena.date);
     const due = new Date(faena.date);
     due.setDate(due.getDate() + 7);
 
     for (const absent of absentSocios) {
-      const exists = await this.prisma.paymentObligation.findUnique({
+      const exists = await this.prisma.paymentObligation.findFirst({
         where: {
-          merchantId_conceptId_period: {
-            merchantId: absent.id,
-            conceptId: fineConcept.id,
-            period,
-          },
+          merchantId: absent.id,
+          conceptId: fineConcept.id,
+          period: { contains: shortId },
         },
       });
 
@@ -297,14 +310,14 @@ export class FaenasService {
       });
 
       // Si existe multa pendiente por haber estado ausente, removerla
-      const period = `FAENA-${faena.id.slice(0, 8)}`;
+      const shortId = faena.id.slice(0, 8);
       const fineConcept = await this.prisma.paymentConcept.findUnique({ where: { code: 'MULTA_FAENA' } });
       if (fineConcept) {
         await this.prisma.paymentObligation.deleteMany({
           where: {
             merchantId,
             conceptId: fineConcept.id,
-            period,
+            period: { contains: shortId },
             status: ObligationStatus.PENDIENTE,
           },
         });
@@ -328,18 +341,17 @@ export class FaenasService {
           });
         }
         const fineAmount = Number(faena.fineAmount) || 30.00;
-        const period = `FAENA-${faena.id.slice(0, 8)}`;
+        const shortId = faena.id.slice(0, 8);
+        const period = this.formatFaenaPeriod(faena.date, faena.id);
         const fDate = new Date(faena.date);
         const due = new Date(faena.date);
         due.setDate(due.getDate() + 7);
 
-        const exists = await this.prisma.paymentObligation.findUnique({
+        const exists = await this.prisma.paymentObligation.findFirst({
           where: {
-            merchantId_conceptId_period: {
-              merchantId,
-              conceptId: fineConcept.id,
-              period,
-            },
+            merchantId,
+            conceptId: fineConcept.id,
+            period: { contains: shortId },
           },
         });
         if (!exists) {
@@ -436,7 +448,8 @@ export class FaenasService {
     }
 
     const fineAmount = Number(faena.fineAmount) || 30.00;
-    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const shortId = faena.id.slice(0, 8);
+    const period = this.formatFaenaPeriod(faena.date, faena.id);
     const fDate = new Date(faena.date);
     const due = new Date(faena.date);
     due.setDate(due.getDate() + 7);
@@ -446,13 +459,11 @@ export class FaenasService {
     for (const socio of allSocios) {
       const isPresent = attendedIds.has(socio.id);
       if (!isPresent) {
-        const exists = await this.prisma.paymentObligation.findUnique({
+        const exists = await this.prisma.paymentObligation.findFirst({
           where: {
-            merchantId_conceptId_period: {
-              merchantId: socio.id,
-              conceptId: fineConcept.id,
-              period,
-            },
+            merchantId: socio.id,
+            conceptId: fineConcept.id,
+            period: { contains: shortId },
           },
         });
 
@@ -477,7 +488,7 @@ export class FaenasService {
           where: {
             merchantId: socio.id,
             conceptId: fineConcept.id,
-            period,
+            period: { contains: shortId },
             status: ObligationStatus.PENDIENTE,
           },
         });
@@ -519,10 +530,10 @@ export class FaenasService {
     });
     if (!faena) throw new NotFoundException('Faena no encontrada');
 
-    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const shortId = faena.id.slice(0, 8);
     const paidFines = await this.prisma.paymentObligation.count({
       where: {
-        period,
+        period: { contains: shortId },
         status: ObligationStatus.PAGADO,
       },
     });
@@ -533,7 +544,7 @@ export class FaenasService {
 
     // Clean up unpaid fine obligations
     await this.prisma.paymentObligation.deleteMany({
-      where: { period },
+      where: { period: { contains: shortId } },
     });
 
     // Delete attendance events
@@ -550,10 +561,10 @@ export class FaenasService {
     const faena = await this.prisma.faena.findUnique({ where: { id } });
     if (!faena) throw new NotFoundException('Faena no encontrada');
 
-    const period = `FAENA-${faena.id.slice(0, 8)}`;
+    const shortId = faena.id.slice(0, 8);
     const fines = await this.prisma.paymentObligation.findMany({
       where: {
-        period,
+        period: { contains: shortId },
         concept: { code: 'MULTA_FAENA' },
       },
       include: {

@@ -36,7 +36,8 @@ RUN npm ci --only=production
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/dist ./dist
+COPY scripts ./scripts
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/src/main"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate && (node scripts/migrate_periods_and_inquilinos.js || true) && node dist/src/main"]

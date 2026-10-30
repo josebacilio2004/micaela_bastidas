@@ -35,7 +35,26 @@ interface TemporalTicket {
 }
 
 export default function AmbulantesTemporalesPage() {
-  const [activeMainTab, setActiveMainTab] = useState<'HOY' | 'HISTORIAL'>('HOY');
+  const [activeMainTab, setActiveMainTab] = useState<'HOY' | 'HISTORIAL' | 'PADRON_TEMPORALES'>('HOY');
+  // Sincronización con Padrón Central
+  const [temporalesList, setTemporalesList] = useState<any[]>([]);
+  const [temporalTypeId, setTemporalTypeId] = useState<string>('');
+  const [syncToPadron, setSyncToPadron] = useState<boolean>(true);
+
+  // Modales CRUD Padrón Temporales
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [isEditTemporalModalOpen, setIsEditTemporalModalOpen] = useState(false);
+  const [editingTemporal, setEditingTemporal] = useState<any>(null);
+  const [temporalForm, setTemporalForm] = useState({
+    firstName: '',
+    lastName: '',
+    dni: '',
+    phone: '',
+    businessCategory: 'Comercio Ambulante General',
+  });
+  const [isTemporalHistoryModalOpen, setIsTemporalHistoryModalOpen] = useState(false);
+  const [selectedTemporalHistory, setSelectedTemporalHistory] = useState<any>(null);
+  const [padronSearch, setPadronSearch] = useState('');
   const [tickets, setTickets] = useState<TemporalTicket[]>([]);
   const [activeRegister, setActiveRegister] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -72,12 +91,28 @@ export default function AmbulantesTemporalesPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [currentReg, paymentsRes] = await Promise.all([
+      const [currentReg, paymentsRes, merchantsRes, typesRes] = await Promise.all([
         apiRequest('/cash-registers/current').catch(() => null),
         apiRequest('/payments?take=1000').catch(() => ({ items: [] })),
+        apiRequest('/merchants').catch(() => []),
+        apiRequest('/merchant-types').catch(() => []),
       ]);
 
       setActiveRegister(currentReg);
+
+      const tType = Array.isArray(typesRes)
+        ? typesRes.find((t: any) => t.code === 'AMBULANTE_TEMPORAL')
+        : null;
+      if (tType) setTemporalTypeId(tType.id);
+
+      const temps = Array.isArray(merchantsRes)
+        ? merchantsRes.filter(
+            (m: any) =>
+              m.merchantTypeId === tType?.id ||
+              m.merchantType?.code === 'AMBULANTE_TEMPORAL'
+          )
+        : [];
+      setTemporalesList(temps);
 
       const items = Array.isArray(paymentsRes?.items) ? paymentsRes.items : [];
       const loadedTickets: TemporalTicket[] = [];
@@ -194,6 +229,42 @@ export default function AmbulantesTemporalesPage() {
         console.warn('Nota: Movimiento registrado vía fallback o sin caja abierta:', err);
       });
 
+      // Sincronizar o verificar en Padrón si el comerciante fue indicado
+      let matchedMerchant = null;
+      if (merchantRef.trim() && syncToPadron && temporalTypeId) {
+        const cleanRef = merchantRef.trim().toUpperCase();
+        matchedMerchant = temporalesList.find((m: any) =>
+          `${m.lastName} ${m.firstName}`.toUpperCase().includes(cleanRef) ||
+          cleanRef.includes((m.dni || '').toUpperCase())
+        );
+
+        if (!matchedMerchant) {
+          try {
+            const parts = merchantRef.trim().split(' ');
+            const firstName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+            const lastName = parts.length > 1 ? parts[0] : 'Ambulante';
+            const created = await apiRequest('/merchants', {
+              method: 'POST',
+              body: JSON.stringify({
+                firstName,
+                lastName,
+                dni: `TMP-${Date.now().toString().slice(-6)}`,
+                merchantTypeId: temporalTypeId,
+                businessCategory: category,
+                memberCondition: 'SOCIO_REGULAR',
+                status: 'ACTIVO',
+              }),
+            });
+            if (created?.id) {
+              matchedMerchant = created;
+              setTemporalesList((prev) => [created, ...prev]);
+            }
+          } catch (e) {
+            console.warn('Registro automático en padrón omitido:', e);
+          }
+        }
+      }
+
       const newTicket: TemporalTicket = {
         id: `TICK-${Date.now()}`,
         ticketNumber: ticketNum,
@@ -218,6 +289,115 @@ export default function AmbulantesTemporalesPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // CRUD Padrón Temporales
+  const handleOpenCreateTemporal = () => {
+    setTemporalForm({
+      firstName: '',
+      lastName: '',
+      dni: '',
+      phone: '',
+      businessCategory: 'Comercio Ambulante General',
+    });
+    setIsRegisterModalOpen(true);
+  };
+
+  const handleCreateTemporalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!temporalTypeId) {
+      alert('Tipo de comerciante AMBULANTE_TEMPORAL no configurado');
+      return;
+    }
+
+    try {
+      const created = await apiRequest('/merchants', {
+        method: 'POST',
+        body: JSON.stringify({
+          firstName: temporalForm.firstName.trim().toUpperCase(),
+          lastName: temporalForm.lastName.trim().toUpperCase(),
+          dni: temporalForm.dni.trim() || `TMP-${Date.now().toString().slice(-6)}`,
+          phone: temporalForm.phone.trim() || null,
+          merchantTypeId: temporalTypeId,
+          businessCategory: temporalForm.businessCategory.trim(),
+          memberCondition: 'SOCIO_REGULAR',
+          status: 'ACTIVO',
+        }),
+      });
+
+      setTemporalesList((prev) => [created, ...prev]);
+      setIsRegisterModalOpen(false);
+      alert('✓ Ambulante Temporal registrado con éxito en el Padrón Central');
+    } catch (err: any) {
+      alert('Error al registrar ambulante temporal: ' + (err.message || 'Error'));
+    }
+  };
+
+  const handleOpenEditTemporal = (t: any) => {
+    setEditingTemporal(t);
+    setTemporalForm({
+      firstName: t.firstName || '',
+      lastName: t.lastName || '',
+      dni: t.dni || '',
+      phone: t.phone || '',
+      businessCategory: t.businessCategory || 'Comercio Ambulante General',
+    });
+    setIsEditTemporalModalOpen(true);
+  };
+
+  const handleEditTemporalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTemporal) return;
+
+    try {
+      const updated = await apiRequest(`/merchants/${editingTemporal.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          firstName: temporalForm.firstName.trim().toUpperCase(),
+          lastName: temporalForm.lastName.trim().toUpperCase(),
+          dni: temporalForm.dni.trim(),
+          phone: temporalForm.phone.trim() || null,
+          businessCategory: temporalForm.businessCategory.trim(),
+        }),
+      });
+
+      setTemporalesList((prev) =>
+        prev.map((m) => (m.id === editingTemporal.id ? { ...m, ...updated } : m))
+      );
+      setIsEditTemporalModalOpen(false);
+      setEditingTemporal(null);
+      alert('✓ Datos actualizados correctamente en el Padrón');
+    } catch (err: any) {
+      alert('Error al actualizar: ' + err.message);
+    }
+  };
+
+  const handleDeleteTemporal = async (t: any) => {
+    if (!confirm(`¿Está seguro de eliminar a ${t.lastName} ${t.firstName} del padrón de temporales?`)) return;
+
+    try {
+      await apiRequest(`/merchants/${t.id}`, { method: 'DELETE' });
+      setTemporalesList((prev) => prev.filter((m) => m.id !== t.id));
+      alert('✓ Ambulante temporal retirado del padrón');
+    } catch (err: any) {
+      alert('Error al eliminar: ' + err.message);
+    }
+  };
+
+  const handleSelectTemporalForTicket = (t: any) => {
+    setMerchantRef(`${t.lastName} ${t.firstName}`.trim());
+    if (t.businessCategory) setCategory(t.businessCategory);
+    setActiveMainTab('HOY');
+  };
+
+  const handleOpenTemporalHistory = (t: any) => {
+    const tName = `${t.lastName} ${t.firstName}`.toUpperCase();
+    const relatedTickets = tickets.filter((tk) =>
+      (tk.merchantName || '').toUpperCase().includes(tName) ||
+      (t.dni && (tk.merchantName || '').includes(t.dni))
+    );
+    setSelectedTemporalHistory({ merchant: t, tickets: relatedTickets });
+    setIsTemporalHistoryModalOpen(true);
   };
 
   // Print Thermal Ticket (80mm)
@@ -457,6 +637,21 @@ export default function AmbulantesTemporalesPage() {
             {tickets.length} total
           </span>
         </button>
+
+        <button
+          onClick={() => setActiveMainTab('PADRON_TEMPORALES')}
+          className={`pb-3 font-bold text-sm flex items-center space-x-2 transition border-b-2 ${
+            activeMainTab === 'PADRON_TEMPORALES'
+              ? 'border-amber-600 text-amber-800'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <User className="w-4 h-4" />
+          <span>Padrón de Ambulantes Temporales</span>
+          <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-800 font-mono font-bold">
+            {temporalesList.length} registrados
+          </span>
+        </button>
       </div>
 
       {/* VIEW 1: OPERACIÓN DEL DÍA ACTUAL */}
@@ -577,11 +772,28 @@ export default function AmbulantesTemporalesPage() {
                     </label>
                     <input
                       type="text"
-                      placeholder="ej: Pasaje 2, Doña Rosa"
+                      list="temporales-suggestions"
+                      placeholder="ej: Pasaje 2, Rosa Quispe"
                       value={merchantRef}
                       onChange={(e) => setMerchantRef(e.target.value)}
                       className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none focus:bg-white"
                     />
+                    <datalist id="temporales-suggestions">
+                      {temporalesList.map((m: any) => (
+                        <option key={m.id} value={`${m.lastName} ${m.firstName}`}>
+                          {m.businessCategory ? `${m.businessCategory}` : ''} {m.dni ? `• DNI: ${m.dni}` : ''}
+                        </option>
+                      ))}
+                    </datalist>
+                    <label className="flex items-center space-x-1.5 text-[10px] text-slate-500 font-bold cursor-pointer mt-1">
+                      <input
+                        type="checkbox"
+                        checked={syncToPadron}
+                        onChange={(e) => setSyncToPadron(e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500 w-3 h-3"
+                      />
+                      <span>Guardar / Vincular en Padrón de Temporales</span>
+                    </label>
                   </div>
                 </div>
 
@@ -990,6 +1202,390 @@ export default function AmbulantesTemporalesPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 3: PADRÓN DE AMBULANTES TEMPORALES REGISTRADOS */}
+      {activeMainTab === 'PADRON_TEMPORALES' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-black text-slate-800 uppercase flex items-center gap-2">
+                <User className="w-5 h-5 text-amber-600" />
+                <span>Padrón Central de Comerciantes Ambulantes Temporales</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Comerciantes eventuales y de feria registrados y sincronizados con el Padrón General del Mercado.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre o DNI..."
+                  value={padronSearch}
+                  onChange={(e) => setPadronSearch(e.target.value)}
+                  className="pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white outline-none w-56"
+                />
+              </div>
+
+              <button
+                onClick={handleOpenCreateTemporal}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-sm transition flex items-center space-x-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Registrar Ambulante Temporal</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-900 text-white font-black uppercase text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4 w-12 text-center">N°</th>
+                    <th className="py-3 px-4">Apellidos y Nombres</th>
+                    <th className="py-3 px-4">DNI / Código</th>
+                    <th className="py-3 px-4">Teléfono</th>
+                    <th className="py-3 px-4">Giro / Rubro</th>
+                    <th className="py-3 px-4 text-center">Tickets</th>
+                    <th className="py-3 px-4 text-right">Total Aportado</th>
+                    <th className="py-3 px-4 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-sans">
+                  {temporalesList
+                    .filter((m: any) => {
+                      if (!padronSearch) return true;
+                      const q = padronSearch.toLowerCase();
+                      const full = `${m.lastName || ''} ${m.firstName || ''}`.toLowerCase();
+                      return full.includes(q) || (m.dni && m.dni.includes(q));
+                    })
+                    .map((t: any, idx: number) => {
+                      const tFullName = `${t.lastName} ${t.firstName}`.toUpperCase();
+                      const myTickets = tickets.filter((tk) =>
+                        (tk.merchantName || '').toUpperCase().includes(tFullName) ||
+                        (t.dni && (tk.merchantName || '').includes(t.dni))
+                      );
+                      const myTotal = myTickets.reduce((sum, tk) => sum + tk.amount, 0);
+
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-50 transition">
+                          <td className="py-3 px-4 text-center font-bold font-mono text-slate-400">{idx + 1}</td>
+                          <td className="py-3 px-4">
+                            <p className="font-bold text-slate-900">{t.lastName} {t.firstName}</p>
+                            <span className="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full font-bold">
+                              AMBULANTE TEMPORAL
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono font-bold text-slate-700">{t.dni || 'Sin DNI'}</td>
+                          <td className="py-3 px-4 font-mono text-slate-500">{t.phone || '—'}</td>
+                          <td className="py-3 px-4 font-bold text-slate-700">{t.businessCategory || 'General'}</td>
+                          <td className="py-3 px-4 text-center font-mono font-bold text-indigo-700">
+                            {myTickets.length}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-black text-emerald-700">
+                            S/ {myTotal.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <div className="flex items-center justify-center space-x-1.5">
+                              <button
+                                onClick={() => handleSelectTemporalForTicket(t)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black flex items-center space-x-1 shadow-sm"
+                                title="Cobrar y emitir ticket rápido"
+                              >
+                                <Ticket className="w-3 h-3" />
+                                <span>Cobrar</span>
+                              </button>
+                              <button
+                                onClick={() => handleOpenTemporalHistory(t)}
+                                className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition"
+                                title="Ver historial de tickets"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditTemporal(t)}
+                                className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition"
+                                title="Editar datos"
+                              >
+                                <Plus className="w-3.5 h-3.5 rotate-45" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTemporal(t)}
+                                className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition"
+                                title="Eliminar del padrón"
+                              >
+                                <Plus className="w-3.5 h-3.5 rotate-45 text-rose-600" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                  {temporalesList.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
+                        <User className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="font-bold text-xs">No hay comerciantes ambulantes temporales registrados aún.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Puede registrarlos con el botón "+ Registrar Ambulante Temporal" o activando la casilla de sincronización al emitir tickets.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REGISTRAR AMBULANTE TEMPORAL */}
+      {isRegisterModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+            <h3 className="text-base font-black text-slate-900 uppercase mb-4 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-amber-600" />
+              <span>Registrar Ambulante Temporal en Padrón</span>
+            </h3>
+
+            <form onSubmit={handleCreateTemporalSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Nombres *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ej: CARMEN ROSA"
+                  value={temporalForm.firstName}
+                  onChange={(e) => setTemporalForm({ ...temporalForm, firstName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Apellidos *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ej: QUISPE FLORES"
+                  value={temporalForm.lastName}
+                  onChange={(e) => setTemporalForm({ ...temporalForm, lastName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">DNI / Documento</label>
+                  <input
+                    type="text"
+                    placeholder="Opcional"
+                    value={temporalForm.dni}
+                    onChange={(e) => setTemporalForm({ ...temporalForm, dni: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Teléfono</label>
+                  <input
+                    type="text"
+                    placeholder="Opcional"
+                    value={temporalForm.phone}
+                    onChange={(e) => setTemporalForm({ ...temporalForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Giro / Rubro Comercial</label>
+                <select
+                  value={temporalForm.businessCategory}
+                  onChange={(e) => setTemporalForm({ ...temporalForm, businessCategory: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800"
+                >
+                  <option value="Comercio Ambulante General">General Ambulante</option>
+                  <option value="Verduras y Hortalizas">Verduras y Hortalizas</option>
+                  <option value="Frutas de Temporada">Frutas de Temporada</option>
+                  <option value="Comida / Desayunos">Comida / Desayunos</option>
+                  <option value="Flores y Plantas">Flores y Plantas</option>
+                  <option value="Ropa / Calzado">Ropa / Calzado</option>
+                  <option value="Plásticos y Bazar">Plásticos y Bazar</option>
+                </select>
+              </div>
+
+              <div className="pt-3 flex justify-end space-x-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsRegisterModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black shadow-md shadow-amber-200"
+                >
+                  Registrar en Padrón
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR AMBULANTE TEMPORAL */}
+      {isEditTemporalModalOpen && editingTemporal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+            <h3 className="text-base font-black text-slate-900 uppercase mb-4">
+              Editar Ambulante Temporal
+            </h3>
+
+            <form onSubmit={handleEditTemporalSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Nombres *</label>
+                <input
+                  type="text"
+                  required
+                  value={temporalForm.firstName}
+                  onChange={(e) => setTemporalForm({ ...temporalForm, firstName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Apellidos *</label>
+                <input
+                  type="text"
+                  required
+                  value={temporalForm.lastName}
+                  onChange={(e) => setTemporalForm({ ...temporalForm, lastName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold uppercase"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">DNI</label>
+                  <input
+                    type="text"
+                    value={temporalForm.dni}
+                    onChange={(e) => setTemporalForm({ ...temporalForm, dni: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-600 uppercase mb-1">Teléfono</label>
+                  <input
+                    type="text"
+                    value={temporalForm.phone}
+                    onChange={(e) => setTemporalForm({ ...temporalForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-600 uppercase mb-1">Giro / Rubro</label>
+                <input
+                  type="text"
+                  value={temporalForm.businessCategory}
+                  onChange={(e) => setTemporalForm({ ...temporalForm, businessCategory: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end space-x-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditTemporalModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black shadow-md shadow-amber-200"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL HISTORIAL DE TICKETS POR AMBULANTE TEMPORAL */}
+      {isTemporalHistoryModalOpen && selectedTemporalHistory && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[85vh] overflow-y-auto">
+            <h3 className="text-base font-black text-slate-900 uppercase flex items-center gap-2">
+              <History className="w-5 h-5 text-indigo-600" />
+              <span>Historial de Cobros por Ticket</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {selectedTemporalHistory.merchant?.lastName} {selectedTemporalHistory.merchant?.firstName} • DNI: {selectedTemporalHistory.merchant?.dni || 'Sin DNI'}
+            </p>
+
+            <div className="mt-4 border border-slate-200 rounded-2xl overflow-hidden">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th className="p-2.5">N° Ticket</th>
+                    <th className="p-2.5">Fecha / Hora</th>
+                    <th className="p-2.5">Medio</th>
+                    <th className="p-2.5 text-right">Monto</th>
+                    <th className="p-2.5 text-center">Ticket</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedTemporalHistory.tickets.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-400">
+                        No registra tickets emitidos con esta referencia todavía.
+                      </td>
+                    </tr>
+                  ) : (
+                    selectedTemporalHistory.tickets.map((tk: any) => (
+                      <tr key={tk.id} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-mono font-black text-indigo-700">{tk.ticketNumber}</td>
+                        <td className="p-2.5 font-mono text-slate-600">{tk.date} {tk.time}</td>
+                        <td className="p-2.5 font-bold text-slate-600">{tk.paymentMethod}</td>
+                        <td className="p-2.5 font-mono font-black text-right text-emerald-700">
+                          S/ {tk.amount.toFixed(2)}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <button
+                            onClick={() => handlePrintThermal(tk)}
+                            className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded"
+                            title="Reimprimir"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsTemporalHistoryModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 text-xs"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>
