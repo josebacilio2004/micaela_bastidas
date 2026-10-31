@@ -20,6 +20,7 @@ import {
   Trash2,
   Receipt,
   User,
+  Save,
 } from 'lucide-react';
 
 interface CocheraUser {
@@ -62,6 +63,14 @@ export default function CocheraPage() {
 
   // Daily payments map: key = `${userId}-${year}-${month}-${day}` -> { paid: boolean, amount: number, paymentId?: string }
   const [paymentsMap, setPaymentsMap] = useState<Record<string, { paid: boolean; amount: number; paymentId?: string }>>({});
+
+  // Grid Selection State (Mass Selection & Bulk Save)
+  const [selectedGridCells, setSelectedGridCells] = useState<Set<string>>(new Set()); // Formato: `${userId}-${day}`
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'EFECTIVO' | 'YAPE'>('EFECTIVO');
+  const [isSavingBulk, setIsSavingBulk] = useState(false);
+  const [selectedDayToSelect, setSelectedDayToSelect] = useState<number>(() => {
+    return new Date().getDate();
+  });
 
   // Payment Modal State
   const [payModalOpen, setPayModalOpen] = useState(false);
@@ -256,7 +265,124 @@ export default function CocheraPage() {
     saveUsersList(updated);
   };
 
-  // Click cell to pay or reprint
+  // Selected Total Amount for Mass Consolidation
+  const selectedTotalAmount = useMemo(() => {
+    let sum = 0;
+    selectedGridCells.forEach((key) => {
+      const lastDash = key.lastIndexOf('-');
+      const uId = key.substring(0, lastDash);
+      const user = users.find((x) => x.id === uId);
+      sum += user ? user.defaultDailyFee : 3.0;
+    });
+    return sum;
+  }, [selectedGridCells, users]);
+
+  // Toggle individual cell in grid
+  const toggleGridCell = (userId: string, day: number) => {
+    const payKey = `${userId}-${selectedYear}-${selectedMonth}-${day}`;
+    if (paymentsMap[payKey]?.paid) return; // Ya está pagado
+
+    const cellKey = `${userId}-${day}`;
+    setSelectedGridCells((prev) => {
+      const next = new Set(prev);
+      if (next.has(cellKey)) next.delete(cellKey);
+      else next.add(cellKey);
+      return next;
+    });
+  };
+
+  // Toggle day column (all unpaid users for day D)
+  const toggleDayColumn = (day: number) => {
+    const unpaidInDay = filteredUsers
+      .map((u) => `${u.id}-${day}`)
+      .filter((k) => {
+        const uId = k.substring(0, k.lastIndexOf('-'));
+        return !paymentsMap[`${uId}-${selectedYear}-${selectedMonth}-${day}`]?.paid;
+      });
+
+    if (unpaidInDay.length === 0) return;
+
+    setSelectedGridCells((prev) => {
+      const next = new Set(prev);
+      const allSelected = unpaidInDay.every((k) => next.has(k));
+      if (allSelected) {
+        unpaidInDay.forEach((k) => next.delete(k));
+      } else {
+        unpaidInDay.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  // Toggle user row (all unpaid days for user U)
+  const toggleUserRow = (userId: string) => {
+    const unpaidInMonth = daysArray
+      .map((d) => `${userId}-${d}`)
+      .filter((k) => {
+        const uId = k.substring(0, k.lastIndexOf('-'));
+        const dStr = k.substring(k.lastIndexOf('-') + 1);
+        return !paymentsMap[`${uId}-${selectedYear}-${selectedMonth}-${dStr}`]?.paid;
+      });
+
+    if (unpaidInMonth.length === 0) return;
+
+    setSelectedGridCells((prev) => {
+      const next = new Set(prev);
+      const allSelected = unpaidInMonth.every((k) => next.has(k));
+      if (allSelected) {
+        unpaidInMonth.forEach((k) => next.delete(k));
+      } else {
+        unpaidInMonth.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  // Select all pending in whole month
+  const selectAllPendingGrid = () => {
+    const allPending: string[] = [];
+    filteredUsers.forEach((u) => {
+      daysArray.forEach((d) => {
+        const payKey = `${u.id}-${selectedYear}-${selectedMonth}-${d}`;
+        if (!paymentsMap[payKey]?.paid) {
+          allPending.push(`${u.id}-${d}`);
+        }
+      });
+    });
+    setSelectedGridCells(new Set(allPending));
+  };
+
+  // Select pending up to today
+  const selectAllPendingUntilToday = () => {
+    const today = new Date();
+    const currentMonthNum = today.getMonth() + 1;
+    const currentYearNum = today.getFullYear();
+
+    let maxDay = daysInMonth;
+    if (selectedYear === currentYearNum && selectedMonth === currentMonthNum) {
+      maxDay = Math.min(today.getDate(), daysInMonth);
+    } else if (selectedYear > currentYearNum || (selectedYear === currentYearNum && selectedMonth > currentMonthNum)) {
+      maxDay = 0;
+    }
+
+    const pendingUntilToday: string[] = [];
+    filteredUsers.forEach((u) => {
+      for (let d = 1; d <= maxDay; d++) {
+        const payKey = `${u.id}-${selectedYear}-${selectedMonth}-${d}`;
+        if (!paymentsMap[payKey]?.paid) {
+          pendingUntilToday.push(`${u.id}-${d}`);
+        }
+      }
+    });
+    setSelectedGridCells(new Set(pendingUntilToday));
+  };
+
+  // Deselect all
+  const clearGridSelection = () => {
+    setSelectedGridCells(new Set());
+  };
+
+  // Click cell: If paid -> Print receipt; If not paid -> Toggle selection
   const handleCellClick = (user: CocheraUser, day: number) => {
     const key = `${user.id}-${selectedYear}-${selectedMonth}-${day}`;
     const payment = paymentsMap[key];
@@ -264,15 +390,20 @@ export default function CocheraPage() {
     if (payment?.paid) {
       handlePrintReceipt(user, day, payment.amount, payment.paymentId);
     } else {
-      setModalTargetUser(user);
-      setModalDay(day);
-      setModalAmount(user.defaultDailyFee);
-      setModalPaymentMethod('EFECTIVO');
-      setPayModalOpen(true);
+      toggleGridCell(user.id, day);
     }
   };
 
-  // Confirm Payment
+  // Quick Open Single Modal (e.g. from action button)
+  const handleOpenSinglePayModal = (user: CocheraUser, day: number) => {
+    setModalTargetUser(user);
+    setModalDay(day);
+    setModalAmount(user.defaultDailyFee);
+    setModalPaymentMethod('EFECTIVO');
+    setPayModalOpen(true);
+  };
+
+  // Confirm Single Payment
   const handleConfirmPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalTargetUser) return;
@@ -284,6 +415,25 @@ export default function CocheraPage() {
     try {
       const notes = `COCHERA-${modalTargetUser.id}-${modalDay}-${selectedMonth}-${selectedYear} | Servicio de Cochera: ${modalTargetUser.name} (${modalTargetUser.vehicleType || 'Vehículo'})`;
 
+      // 1. Registrar en backend Payments para historial general
+      await apiRequest('/payments/bulk', {
+        method: 'POST',
+        body: JSON.stringify({
+          items: [
+            {
+              conceptCode: 'COCHERA',
+              amount: modalAmount,
+              period: `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(modalDay).padStart(2, '0')}`,
+              paymentMethod: modalPaymentMethod,
+              notes,
+              paidAt: new Date(selectedYear, selectedMonth - 1, modalDay, 12, 0, 0).toISOString(),
+            },
+          ],
+          paymentMethod: modalPaymentMethod,
+        }),
+      }).catch((err) => console.warn('Payment bulk single err:', err));
+
+      // 2. Registrar movimiento en caja activa
       await apiRequest('/cash-registers/current/movements', {
         method: 'POST',
         body: JSON.stringify({
@@ -303,12 +453,107 @@ export default function CocheraPage() {
       setPaymentsMap(updatedMap);
       localStorage.setItem('mb_cochera_payments', JSON.stringify(updatedMap));
 
+      // Quitar de selección si estaba
+      setSelectedGridCells((prev) => {
+        const next = new Set(prev);
+        next.delete(`${modalTargetUser.id}-${modalDay}`);
+        return next;
+      });
+
       setPayModalOpen(false);
       handlePrintReceipt(modalTargetUser, modalDay, modalAmount, opNumber);
     } catch (err: any) {
       alert('Error registrando cobro: ' + err.message);
     } finally {
       setProcessingPayment(false);
+    }
+  };
+
+  // CONSOLIDAR Y GUARDAR EN MASA
+  const handleConsolidatedSave = async () => {
+    if (selectedGridCells.size === 0) {
+      alert('Por favor seleccione al menos una casilla de la cuadrícula para consolidar cobros.');
+      return;
+    }
+
+    const count = selectedGridCells.size;
+    const totalAmount = selectedTotalAmount;
+
+    const confirmMsg = `¿Desea CONSOLIDAR Y GUARDAR los cobros de cochera seleccionados?\n\n` +
+      `  • Período: ${monthNames[selectedMonth - 1]} ${selectedYear}\n` +
+      `  • Casillas seleccionadas: ${count}\n` +
+      `  • Monto total a recaudar: S/ ${totalAmount.toFixed(2)}\n` +
+      `  • Medio de Pago: ${bulkPaymentMethod}\n\n` +
+      `Los cobros se registrarán en la Base de Datos oficial y en el Historial General de Pagos.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    try {
+      const items = Array.from(selectedGridCells).map((k) => {
+        const lastDash = k.lastIndexOf('-');
+        const uId = k.substring(0, lastDash);
+        const day = parseInt(k.substring(lastDash + 1), 10);
+        const user = users.find((x) => x.id === uId);
+        const fee = user ? user.defaultDailyFee : 3.0;
+
+        return {
+          conceptCode: 'COCHERA',
+          amount: fee,
+          period: `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+          paymentMethod: bulkPaymentMethod,
+          notes: `COCHERA-${uId}-${day}-${selectedMonth}-${selectedYear} | Servicio de Cochera: ${user?.name || uId} (${user?.vehicleType || 'Vehículo'})`,
+          paidAt: new Date(selectedYear, selectedMonth - 1, day, 12, 0, 0).toISOString(),
+        };
+      });
+
+      // 1. Guardar en backend masivo
+      await apiRequest('/payments/bulk', {
+        method: 'POST',
+        body: JSON.stringify({
+          items,
+          paymentMethod: bulkPaymentMethod,
+        }),
+      });
+
+      // 2. Registrar ingreso consolidado en caja activa
+      if (activeRegister) {
+        await apiRequest('/cash-registers/current/movements', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'INGRESO',
+            concept: `Cochera Consolidada (${count} cobros) - ${monthNames[selectedMonth - 1]} ${selectedYear}`,
+            amount: totalAmount,
+            reference: `REC-COC-BULK-${Date.now().toString().slice(-6)}`,
+          }),
+        }).catch((err) => console.warn('Caja movimiento err:', err));
+      }
+
+      // 3. Actualizar mapa local de pagos
+      const newMap = { ...paymentsMap };
+      selectedGridCells.forEach((k) => {
+        const lastDash = k.lastIndexOf('-');
+        const uId = k.substring(0, lastDash);
+        const day = parseInt(k.substring(lastDash + 1), 10);
+        const user = users.find((x) => x.id === uId);
+        const fee = user ? user.defaultDailyFee : 3.0;
+        const mapKey = `${uId}-${selectedYear}-${selectedMonth}-${day}`;
+        newMap[mapKey] = {
+          paid: true,
+          amount: fee,
+          paymentId: `REC-COC-${Date.now().toString().slice(-6)}`,
+        };
+      });
+
+      setPaymentsMap(newMap);
+      localStorage.setItem('mb_cochera_payments', JSON.stringify(newMap));
+      setSelectedGridCells(new Set());
+
+      alert(`✓ ¡Éxito! Se consolidaron y guardaron ${count} cobros de cochera por un total de S/ ${totalAmount.toFixed(2)}.`);
+    } catch (err: any) {
+      alert('Error al consolidar pagos: ' + (err.message || err));
+    } finally {
+      setIsSavingBulk(false);
     }
   };
 
@@ -523,6 +768,98 @@ export default function CocheraPage() {
         </div>
       </div>
 
+      {/* Selection & Mass Consolidation Control Bar */}
+      <div className="bg-amber-50 border border-amber-200 rounded-3xl p-4 shadow-sm space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-black uppercase text-amber-950 flex items-center gap-1.5 mr-2">
+              <Check className="w-4 h-4 text-amber-700" />
+              Selección en Cuadrícula:
+            </span>
+
+            <button
+              type="button"
+              onClick={selectAllPendingGrid}
+              className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-xl text-xs font-black transition shadow-sm"
+              title="Seleccionar todas las casillas pendientes de este mes"
+            >
+              ✓ Todo el Mes
+            </button>
+
+            <button
+              type="button"
+              onClick={selectAllPendingUntilToday}
+              className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-xl text-xs font-black transition shadow-sm"
+              title={`Seleccionar todas las casillas pendientes hasta hoy (Día ${new Date().getDate()})`}
+            >
+              Hasta Hoy ({new Date().getDate()})
+            </button>
+
+            <div className="flex items-center space-x-1.5 bg-white border border-amber-300 rounded-xl px-2.5 py-1 text-xs">
+              <span className="font-bold text-amber-900">Día:</span>
+              <select
+                value={selectedDayToSelect}
+                onChange={(e) => setSelectedDayToSelect(Number(e.target.value))}
+                className="bg-transparent font-bold text-amber-950 outline-none cursor-pointer"
+              >
+                {daysArray.map((d) => (
+                  <option key={d} value={d}>
+                    Día {d}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => toggleDayColumn(selectedDayToSelect)}
+                className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold"
+              >
+                Seleccionar
+              </button>
+            </div>
+
+            {selectedGridCells.size > 0 && (
+              <button
+                type="button"
+                onClick={clearGridSelection}
+                className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition"
+              >
+                Limpiar ({selectedGridCells.size})
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-mono font-black text-amber-950 shadow-sm">
+              {selectedGridCells.size} casillas:{' '}
+              <span className="text-emerald-700 text-sm">S/ {selectedTotalAmount.toFixed(2)}</span>
+            </div>
+
+            <select
+              value={bulkPaymentMethod}
+              onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+              className="bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs font-bold text-amber-950 outline-none shadow-sm"
+            >
+              <option value="EFECTIVO">💵 En Efectivo</option>
+              <option value="YAPE">📱 Yape / Digital</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={handleConsolidatedSave}
+              disabled={selectedGridCells.size === 0 || isSavingBulk}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center space-x-1.5 shadow-md shadow-amber-200 transition"
+            >
+              <Save className="w-4 h-4" />
+              <span>
+                {isSavingBulk
+                  ? 'Guardando...'
+                  : `Consolidar y Guardar Pagos en Masa (${selectedGridCells.size})`}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Search Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex items-center justify-between">
         <div className="flex items-center space-x-2 w-full max-w-sm">
@@ -546,95 +883,154 @@ export default function CocheraPage() {
           <table className="w-full text-xs text-left border-collapse">
             <thead className="bg-slate-900 text-white font-black text-[10px] uppercase">
               <tr>
-                <th className="p-2.5 border-r border-slate-800 w-8 text-center sticky left-0 bg-slate-900 z-10">N°</th>
+                <th className="p-2.5 border-r border-slate-800 w-8 text-center sticky left-0 bg-slate-900 z-10">
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredUsers.length > 0 &&
+                      filteredUsers.every((u) => {
+                        const unpaidInMonth = daysArray.filter((d) => !paymentsMap[`${u.id}-${selectedYear}-${selectedMonth}-${d}`]?.paid);
+                        return unpaidInMonth.length > 0 && unpaidInMonth.every((d) => selectedGridCells.has(`${u.id}-${d}`));
+                      })
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) selectAllPendingGrid();
+                      else clearGridSelection();
+                    }}
+                    className="rounded border-slate-700 text-amber-500 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                    title="Seleccionar / Deseleccionar toda la cuadrícula pendiente"
+                  />
+                </th>
                 <th className="p-2.5 border-r border-slate-800 min-w-[200px] sticky left-8 bg-slate-900 z-10">
                   Apellidos y Nombres
                 </th>
                 <th className="p-2.5 border-r border-slate-800 w-24 text-center">Tarifa (S/)</th>
                 {daysArray.map((d) => (
-                  <th key={d} className="p-1 border-r border-slate-800 text-center w-8 min-w-[32px]">
+                  <th
+                    key={d}
+                    onClick={() => toggleDayColumn(d)}
+                    className="p-1 border-r border-slate-800 text-center w-8 min-w-[32px] cursor-pointer hover:bg-slate-800 transition"
+                    title={`Haga clic para seleccionar/deseleccionar el Día ${d} completo`}
+                  >
                     {d}
                   </th>
                 ))}
                 <th className="p-2.5 text-right min-w-[90px] bg-emerald-950 text-emerald-200">Total (S/)</th>
-                <th className="p-2.5 text-center min-w-[90px] bg-slate-800 text-white">Acciones</th>
+                <th className="p-2.5 text-center min-w-[100px] bg-slate-800 text-white">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-              {filteredUsers.map((u, idx) => (
-                <tr key={u.id} className="hover:bg-slate-50 transition">
-                  <td className="p-2 border-r border-slate-100 text-center font-bold text-slate-400 sticky left-0 bg-white z-10">
-                    {idx + 1}
-                  </td>
-                  <td className="p-2 border-r border-slate-100 sticky left-8 bg-white z-10 font-sans">
-                    <p className="font-bold text-slate-900 leading-tight">{u.name}</p>
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      {u.vehicleType} {u.plate ? `• ${u.plate}` : ''}
-                    </p>
-                  </td>
-                  <td className="p-1 border-r border-slate-100 text-center">
-                    <div className="flex items-center justify-center space-x-1">
-                      <span className="text-slate-400 text-[10px]">S/</span>
-                      <input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        value={u.defaultDailyFee}
-                        onChange={(e) => handleUpdateFee(u.id, parseFloat(e.target.value) || 0)}
-                        className="w-12 text-center font-black font-mono bg-slate-50 border border-slate-200 rounded px-1 py-0.5 focus:bg-white focus:outline-none"
-                      />
-                    </div>
-                  </td>
-                  {daysArray.map((d) => {
-                    const key = `${u.id}-${selectedYear}-${selectedMonth}-${d}`;
-                    const isPaid = paymentsMap[key]?.paid;
-                    const paidAmount = paymentsMap[key]?.amount;
+              {filteredUsers.map((u, idx) => {
+                const unpaidForU = daysArray.filter((d) => !paymentsMap[`${u.id}-${selectedYear}-${selectedMonth}-${d}`]?.paid);
+                const isUserRowFullySelected = unpaidForU.length > 0 && unpaidForU.every((d) => selectedGridCells.has(`${u.id}-${d}`));
 
-                    return (
-                      <td
-                        key={d}
-                        onClick={() => handleCellClick(u, d)}
-                        className={`p-1 border-r border-slate-100 text-center cursor-pointer transition select-none ${
-                          isPaid
-                            ? 'bg-emerald-500 text-white font-black hover:bg-emerald-600'
-                            : 'hover:bg-emerald-50 text-slate-300 hover:text-emerald-700'
-                        }`}
-                        title={isPaid ? `Día ${d}: Pagado S/ ${paidAmount}` : `Día ${d}: Clic para cobrar S/ ${u.defaultDailyFee}`}
-                      >
-                        {isPaid ? '✓' : '•'}
-                      </td>
-                    );
-                  })}
-                  <td className="p-2 font-black text-right text-emerald-700 bg-emerald-50/50">
-                    S/ {(userTotals[u.id] || 0).toFixed(2)}
-                  </td>
-                  <td className="p-2 text-center font-sans">
-                    <div className="flex items-center justify-center space-x-1">
-                      <button
-                        onClick={() => handleOpenHistory(u)}
-                        className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded transition"
-                        title="Ver historial de cobros"
-                      >
-                        <Receipt className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenEditUser(u)}
-                        className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded transition"
-                        title="Editar datos del cliente"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(u)}
-                        className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded transition"
-                        title="Eliminar cliente"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                return (
+                  <tr key={u.id} className="hover:bg-slate-50 transition">
+                    <td className="p-2 border-r border-slate-100 text-center sticky left-0 bg-white z-10">
+                      <input
+                        type="checkbox"
+                        checked={isUserRowFullySelected}
+                        onChange={() => toggleUserRow(u.id)}
+                        className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                        title={`Seleccionar / Deseleccionar todos los días pendientes de ${u.name}`}
+                      />
+                    </td>
+                    <td className="p-2 border-r border-slate-100 sticky left-8 bg-white z-10 font-sans">
+                      <p className="font-bold text-slate-900 leading-tight">{u.name}</p>
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        {u.vehicleType} {u.plate ? `• ${u.plate}` : ''}
+                      </p>
+                    </td>
+                    <td className="p-1 border-r border-slate-100 text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        <span className="text-slate-400 text-[10px]">S/</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={u.defaultDailyFee}
+                          onChange={(e) => handleUpdateFee(u.id, parseFloat(e.target.value) || 0)}
+                          className="w-12 text-center font-black font-mono bg-slate-50 border border-slate-200 rounded px-1 py-0.5 focus:bg-white focus:outline-none"
+                        />
+                      </div>
+                    </td>
+                    {daysArray.map((d) => {
+                      const mapKey = `${u.id}-${selectedYear}-${selectedMonth}-${d}`;
+                      const cellKey = `${u.id}-${d}`;
+                      const isPaid = paymentsMap[mapKey]?.paid;
+                      const paidAmount = paymentsMap[mapKey]?.amount;
+                      const isSelected = selectedGridCells.has(cellKey);
+
+                      return (
+                        <td
+                          key={d}
+                          onClick={() => handleCellClick(u, d)}
+                          className={`p-1 border-r border-slate-100 text-center cursor-pointer transition select-none ${
+                            isPaid
+                              ? 'bg-emerald-500 text-white font-black hover:bg-emerald-600'
+                              : isSelected
+                              ? 'bg-amber-400 text-amber-950 font-black ring-2 ring-inset ring-amber-600 shadow-sm'
+                              : 'hover:bg-amber-100 text-slate-300 hover:text-amber-900'
+                          }`}
+                          title={
+                            isPaid
+                              ? `Día ${d}: Pagado S/ ${paidAmount} - Clic para reimprimir`
+                              : isSelected
+                              ? `Día ${d}: Seleccionado S/ ${u.defaultDailyFee.toFixed(2)} - Clic para desmarcar`
+                              : `Día ${d}: Clic para seleccionar (S/ ${u.defaultDailyFee.toFixed(2)})`
+                          }
+                        >
+                          {isPaid ? `✓ ${paidAmount || u.defaultDailyFee}` : isSelected ? `✓ ${u.defaultDailyFee}` : '•'}
+                        </td>
+                      );
+                    })}
+                    <td className="p-2 font-black text-right text-emerald-700 bg-emerald-50/50">
+                      S/ {(userTotals[u.id] || 0).toFixed(2)}
+                    </td>
+                    <td className="p-2 text-center font-sans">
+                      <div className="flex items-center justify-center space-x-1">
+                        <button
+                          onClick={() => handleOpenSinglePayModal(u, selectedDayToSelect || 1)}
+                          className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded transition"
+                          title="Cobro manual / específico de un día"
+                        >
+                          <DollarSign className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleOpenHistory(u)}
+                          className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded transition"
+                          title="Ver historial de cobros"
+                        >
+                          <Receipt className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingUser(u);
+                            setFormName(u.name);
+                            setFormDailyFee(u.defaultDailyFee.toString());
+                            setFormVehicleType(u.vehicleType || 'Auto');
+                            setFormPlate(u.plate || '');
+                            setFormPhone(u.phone || '');
+                            setFormNotes(u.notes || '');
+                            setIsEditModalOpen(true);
+                          }}
+                          className="p-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded transition"
+                          title="Editar datos del cliente"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(u)}
+                          className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded transition"
+                          title="Eliminar cliente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
             {/* Totals row */}
             <tfoot className="bg-slate-100 font-mono font-black text-[11px] border-t-2 border-slate-300">

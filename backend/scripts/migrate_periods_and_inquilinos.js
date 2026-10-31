@@ -117,6 +117,7 @@ async function main() {
     { code: 'AGUA', name: 'Servicio de Agua Potable', periodicity: 'MENSUAL', description: 'Consumo y mantenimiento de redes sanitarias' },
     { code: 'MULTA_ASAMBLEA', name: 'Multa por Inasistencia a Asamblea', periodicity: 'POR_USO', description: 'Sanción económica por inasistencia no justificada a asamblea general' },
     { code: 'MULTA_FAENA', name: 'Multa por Inasistencia a Faena', periodicity: 'POR_USO', description: 'Sanción económica por inasistencia a jornada de limpieza o faena comunal' },
+    { code: 'COCHERA', name: 'Servicio de Cochera / Parqueo', periodicity: 'DIARIO', description: 'Estacionamiento y custodia de vehículos en el mercado' },
   ];
   for (const c of concepts) {
     await prisma.paymentConcept.upsert({

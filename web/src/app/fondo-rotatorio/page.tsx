@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, getAuthToken } from '@/lib/api';
 import {
   Coins,
   HandCoins,
@@ -146,11 +146,17 @@ export default function FondoRotatorioPage() {
 
   const handleDownloadDocx = async (loanId: string, orderNumber?: string) => {
     try {
-      const token = localStorage.getItem('token');
+      if (!loanId) {
+        alert('ID de préstamo no especificado');
+        return;
+      }
+      const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`/api/revolving-fund/loans/${loanId}/download-docx`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
       });
       if (!res.ok) throw new Error('Error al generar archivo Word');
       const blob = await res.blob();
@@ -161,6 +167,7 @@ export default function FondoRotatorioPage() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      setTimeout(() => window.URL.revokeObjectURL(url), 1000);
     } catch (err: any) {
       alert(err.message || 'Error descargando archivo Word');
     }
@@ -1756,7 +1763,7 @@ export default function FondoRotatorioPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDownloadDocx(contractData.id || contractData.loanId, contractData.orderNumber)}
+                  onClick={() => handleDownloadDocx(contractData?.id || contractData?.loanId || contractData?.loanDetails?.id || '', contractData?.orderNumber)}
                   className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs shadow flex items-center space-x-1.5 transition"
                   title="Descargar plantilla oficial rellena en formato Microsoft Word (.docx)"
                 >

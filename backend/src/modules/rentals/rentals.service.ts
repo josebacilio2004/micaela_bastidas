@@ -386,6 +386,60 @@ export class RentalsService {
       },
     });
 
+    // Registrar en tabla Payment para historial unificado de cobranzas
+    try {
+      let concept = await this.prisma.paymentConcept.findUnique({
+        where: { code: 'ALQUILER_INQUILINO' },
+      });
+      if (!concept) {
+        concept = await this.prisma.paymentConcept.create({
+          data: {
+            code: 'ALQUILER_INQUILINO',
+            name: 'Alquiler de Puesto (Inquilinos)',
+            periodicity: 'MENSUAL',
+            isActive: true,
+          },
+        });
+      }
+
+      let validMerchantId: string | null = null;
+      if (contract.merchantId) {
+        const m = await this.prisma.merchant.findUnique({ where: { id: contract.merchantId }, select: { id: true } });
+        if (m) validMerchantId = m.id;
+      }
+      if (!validMerchantId && contract.tenantDni) {
+        const m = await this.prisma.merchant.findUnique({ where: { dni: contract.tenantDni }, select: { id: true } });
+        if (m) validMerchantId = m.id;
+      }
+
+      const collectorUser = await this.prisma.user.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      const defaultUserId = userId || collectorUser?.id || '';
+
+      const period = installment.dueDate
+        ? `${new Date(installment.dueDate).getFullYear()}-${String(new Date(installment.dueDate).getMonth() + 1).padStart(2, '0')}`
+        : new Date().toISOString().slice(0, 7);
+
+      await this.prisma.payment.create({
+        data: {
+          operationNumber: receiptNumber,
+          merchantId: validMerchantId,
+          conceptId: concept.id,
+          amount: installment.totalAmount,
+          period: `${period} (Cuota ${installmentNumber})`,
+          paymentMethod: dto.paymentMethod || PaymentMethod.EFECTIVO,
+          cashRegisterId,
+          collectedById: defaultUserId,
+          notes: `Alquiler Puesto ${contract.stallCode} - Cuota ${installmentNumber}/${contract.monthsCount} (${contract.tenantName})`,
+          paidAt: new Date(),
+        },
+      });
+    } catch (errPayment) {
+      console.warn('Nota: Pago en tabla Payment registrado o duplicado omitido:', errPayment);
+    }
+
     // Comprobar si todas las cuotas han sido canceladas
     const pendingRemaining = await this.prisma.stallRentalInstallment.count({
       where: { contractId, status: 'PENDIENTE' },

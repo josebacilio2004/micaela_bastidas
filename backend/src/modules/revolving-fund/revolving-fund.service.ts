@@ -289,6 +289,8 @@ export class RevolvingFundService {
     const borrowerStallCode = merchant?.stall?.code || 'PUESTO ASOCIADO';
 
     return {
+      id: loan.id,
+      loanId: loan.id,
       title: 'DOCUMENTO OFICIAL DEL FONDO ROTATORIO: CONTRATO, SOLICITUD, LIQUIDACIÓN Y CRONOGRAMA',
       orderNumber: loan.orderNumber,
       association: 'Asociación de Pequeños Comerciantes del Mercado de Abastos “MICAELA BASTIDAS” de “J.P.V” El Tambo – Huancayo',
@@ -394,21 +396,38 @@ export class RevolvingFundService {
     const contract = await this.getLoanContract(id);
     const fs = await import('fs');
     const path = await import('path');
-    const JSZip = (await import('jszip')).default;
+    const JSZipModule: any = await import('jszip');
+    const JSZip = JSZipModule.default || JSZipModule;
 
-    const candidatePaths = [
-      path.resolve(process.cwd(), 'assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
-      path.resolve(process.cwd(), '../assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
-      path.resolve(process.cwd(), 'backend/assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
-      path.resolve(__dirname, '../../../assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
-      'D:/jose/micaela_bastidas/assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx',
+    const candidateDirs = [
+      path.resolve(process.cwd(), 'assets'),
+      path.resolve(process.cwd(), '../assets'),
+      path.resolve(process.cwd(), 'backend/assets'),
+      path.resolve(__dirname, '../../../assets'),
+      path.resolve(__dirname, '../../../../assets'),
+      'D:/jose/micaela_bastidas/assets',
+      'D:/jose/micaela_bastidas/backend/assets',
     ];
 
     let templatePath = '';
-    for (const p of candidatePaths) {
-      if (fs.existsSync(p)) {
-        templatePath = p;
-        break;
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(dir)) {
+        // Buscar plantilla directa prestamo_plantilla.docx o cualquier .docx con PRESTAMO
+        const directTemplate = path.join(dir, 'prestamo_plantilla.docx');
+        if (fs.existsSync(directTemplate)) {
+          templatePath = directTemplate;
+          break;
+        }
+        try {
+          const files = fs.readdirSync(dir);
+          const found = files.find(
+            (f) => f.toLowerCase().includes('prestamo') && f.toLowerCase().endsWith('.docx'),
+          );
+          if (found) {
+            templatePath = path.join(dir, found);
+            break;
+          }
+        } catch (_) {}
       }
     }
 
@@ -420,9 +439,12 @@ export class RevolvingFundService {
     const zip = await JSZip.loadAsync(templateData);
     let docXml = await zip.file('word/document.xml')!.async('string');
 
-    const borrowerFullName = `${contract.borrower.lastName} ${contract.borrower.firstName}`.toUpperCase();
-    const dni = contract.borrower.dni || '';
-    const address = contract.borrower.address || 'JR. SANTOS ATAHUALPA N° 949 SECTOR N° 8 J.P.V. EL TAMBO';
+    // Quitar marcas ortográficas que fragmentan las palabras en Word
+    docXml = docXml.replace(/<w:proofErr[^>]*\/>/g, '');
+
+    const borrowerFullName = `${contract.borrower.lastName} ${contract.borrower.firstName}`.trim().toUpperCase() || 'COMERCIANTE ASOCIADO';
+    const dni = contract.borrower.dni || '00000000';
+    const address = contract.borrower.address || `PUESTO ${contract.borrower.stallCode} - MERCADO MICAELA BASTIDAS`;
     const amountStr = contract.loanDetails.principalAmount;
     const totalToPayStr = contract.loanDetails.totalAmountToPay;
     const totalInterestStr = contract.loanDetails.totalInterest;
@@ -430,27 +452,49 @@ export class RevolvingFundService {
     const monthlyTotalStr = contract.loanDetails.monthlyQuota;
     const amountWords = contract.loanDetails.principalInWords;
 
-    docXml = docXml
-      .replace(/ESTEBAN\s+LLACSA\s+CLEMENCIA/g, borrowerFullName)
-      .replace(/ESTEBAN\s+LLACSA/g, contract.borrower.lastName.toUpperCase())
-      .replace(/CLEMENCIA/g, contract.borrower.firstName.toUpperCase())
-      .replace(/19\s*836345/g, dni)
-      .replace(/JR\.\s*HIP[ÓO]LITO\s*UNANUE\s*N[°º]\s*297\s*,\s*SECTOR\s*4\s*J\.P\.V\s*\.\s*EL\s*TAMBO/gi, address)
-      .replace(/2\s*,\s*000\.00/g, amountStr)
-      .replace(/2\s*,\s*120\s*\.\s*00/g, totalToPayStr)
-      .replace(/1\s*,\s*060\s*\.\s*00/g, monthlyTotalStr)
-      .replace(/6\s*0\.00/g, monthlyInterestStr)
-      .replace(/12\s*0\s*\.\s*00/g, totalInterestStr)
-      .replace(/Mil\s+y\s+00\/100\s+Soles/gi, `${amountWords} Soles`)
-      .replace(/PRESTAMO\s+N[°º]\s+1/gi, `PRESTAMO N° ${contract.orderNumber.replace(/[^0-9]/g, '') || '001'}`)
-      .replace(/5\s+de\s+MARZO\s+del\s+202\s*6/gi, contract.loanDetails.startDateFormatted)
-      .replace(/5\s*\/03\/202\s*6/g, contract.loanDetails.startDateSlash)
-      .replace(/5\s*\/04\/202\s*6/g, contract.loanDetails.firstDueDateSlash)
-      .replace(/5\s*\/05\/202\s*6/g, contract.loanDetails.endDateSlash);
+    // 1. Reemplazo del nombre del prestatario en runs de Word
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*ESTEBAN[^<]*<\/w:t>/g, `<w:t xml:space="preserve">${borrowerFullName} </w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*LLACSA[^<]*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*CLEMENCIA[^<]*<\/w:t>/g, '<w:t></w:t>');
+
+    // 2. Reemplazo de DNI
+    docXml = docXml.replace(/<w:t[^>]*>\s*19\s*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*836345[^<]*<\/w:t>/g, `<w:t>${dni}</w:t>`);
+    docXml = docXml.replace(new RegExp('19' + dni, 'g'), dni);
+
+    // 3. Reemplazo de Dirección
+    docXml = docXml.replace(/<w:t[^>]*>\s*HIPÓLITO\s+UNANUE\s*<\/w:t>/g, `<w:t xml:space="preserve">${address} </w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>\s*HIPOLITO\s*<\/w:t>/g, `<w:t xml:space="preserve">${address} </w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>\s*UNANUE\s*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>\s*297\s*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*EL\s+TAMBO[^<]*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>[^<]*SECTOR\s+4[^<]*<\/w:t>/g, '<w:t></w:t>');
+
+    // 4. Reemplazo de Montos
+    docXml = docXml.replace(/<w:t xml:space="preserve">2 <\/w:t>/g, `<w:t xml:space="preserve">${amountStr} </w:t>`);
+    docXml = docXml.replace(/<w:t>2<\/w:t>/g, `<w:t>${amountStr}</w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>\s*,000\.00\s*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>\s*,000\.00\s+Soles\s*<\/w:t>/g, '<w:t> Soles</w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>\s*1,060\s*<\/w:t>/g, `<w:t>${monthlyTotalStr} </w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>\s*, 120\s*<\/w:t>/g, `<w:t>${totalToPayStr} </w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>\s*6\s*<\/w:t>/g, `<w:t>${monthlyInterestStr} </w:t>`);
+    docXml = docXml.replace(/<w:t[^>]*>\s*0\.00\s*<\/w:t>/g, '<w:t></w:t>');
+    docXml = docXml.replace(/<w:t[^>]*>\s*12\s*<\/w:t>/g, `<w:t>${totalInterestStr} </w:t>`);
+
+    // 5. Reemplazo de Fechas y N° de Orden
+    docXml = docXml.replace(/5\s+de\s+MARZO\s+del\s+2026/gi, contract.loanDetails.startDateFormatted);
+    docXml = docXml.replace(/22\s+de\s+MARZO\s+del\s+2022/gi, contract.loanDetails.startDateFormatted);
+    docXml = docXml.replace(/5\s*\/03\/202\s*6/g, contract.loanDetails.startDateSlash);
+    docXml = docXml.replace(/6\s*\/03\/202\s*6/g, contract.loanDetails.startDateSlash);
+    docXml = docXml.replace(/5\s*\/04\/202\s*6/g, contract.loanDetails.firstDueDateSlash);
+    docXml = docXml.replace(/5\s*\/05\/202\s*6/g, contract.loanDetails.endDateSlash);
+    docXml = docXml.replace(/2\s+MESES/gi, `${contract.loanDetails.termMonths} MESES`);
+    docXml = docXml.replace(/PRESTAMO\s+N[°ºo]?\s*0?0?1/gi, `PRESTAMO N° ${contract.orderNumber.replace(/[^0-9]/g, '') || '001'}`);
 
     zip.file('word/document.xml', docXml);
     const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    const filename = `CONTRATO-${contract.orderNumber}-${contract.borrower.lastName.replace(/\s+/g, '_')}.docx`;
+    const safeLastName = (contract.borrower.lastName || 'SOCIO').replace(/\s+/g, '_');
+    const filename = `CONTRATO-${contract.orderNumber}-${safeLastName}.docx`;
 
     return { buffer, filename };
   }

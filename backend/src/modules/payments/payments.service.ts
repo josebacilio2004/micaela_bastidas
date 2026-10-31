@@ -301,17 +301,44 @@ export class PaymentsService {
       for (const item of items) {
         let resolvedConceptId = item.conceptId;
         if (!resolvedConceptId && item.conceptCode) {
-          const found = conceptCache.get(item.conceptCode);
+          let found = conceptCache.get(item.conceptCode);
+          if (!found) {
+            found = await tx.paymentConcept.findUnique({ where: { code: item.conceptCode } });
+            if (!found) {
+              found = await tx.paymentConcept.create({
+                data: {
+                  code: item.conceptCode,
+                  name: item.conceptCode === 'COCHERA' ? 'Servicio de Cochera / Parqueo' : item.conceptCode,
+                  periodicity: 'DIARIO',
+                  isActive: true,
+                },
+              });
+            }
+            conceptCache.set(found.id, found);
+            conceptCache.set(found.code, found);
+          }
           if (found) resolvedConceptId = found.id;
         }
         if (!resolvedConceptId) {
           resolvedConceptId = allConcepts[0]?.id;
         }
 
-        if (item.merchantId && resolvedConceptId && item.period) {
+        // Validar si merchantId existe como FK real en la base de datos
+        let validMerchantId: string | null = null;
+        if (item.merchantId) {
+          const mExists = await tx.merchant.findUnique({
+            where: { id: item.merchantId },
+            select: { id: true },
+          });
+          if (mExists) {
+            validMerchantId = item.merchantId;
+          }
+        }
+
+        if (validMerchantId && resolvedConceptId && item.period) {
           const existing = await tx.payment.findFirst({
             where: {
-              merchantId: item.merchantId,
+              merchantId: validMerchantId,
               conceptId: resolvedConceptId,
               period: item.period,
               isVoided: false,
@@ -330,7 +357,7 @@ export class PaymentsService {
         const payment = await tx.payment.create({
           data: {
             operationNumber,
-            merchantId: item.merchantId,
+            merchantId: validMerchantId,
             conceptId: resolvedConceptId!,
             obligationId: item.obligationId,
             amount: Number(item.amount),

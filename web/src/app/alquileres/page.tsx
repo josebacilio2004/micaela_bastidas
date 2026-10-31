@@ -498,6 +498,72 @@ export default function AlquileresPage() {
     }
   };
 
+  // Thermal Print (80mm) para Cuota de Alquiler
+  const handlePrintRentalReceipt = (contract: any, installment: any) => {
+    const printWindow = window.open('', '_blank', 'width=380,height=600');
+    if (!printWindow) return;
+
+    const op = installment.receiptNumber || `VCH-ALQ-${installment.installmentNumber}`;
+    const dateFormatted = installment.paidAt
+      ? `${new Date(installment.paidAt).toLocaleDateString('es-PE')} ${new Date(installment.paidAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`
+      : new Date().toLocaleString('es-PE');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Recibo Alquiler - ${op}</title>
+          <style>
+            @page { size: 80mm auto; margin: 3mm; }
+            body { font-family: monospace; font-size: 11pt; color: #000; width: 72mm; margin: 0 auto; padding: 4px; }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .divider { border-top: 1px dashed #000; margin: 6px 0; }
+            .row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 10pt; }
+            .amount { font-size: 17pt; font-weight: 900; text-align: center; margin: 8px 0; }
+            .footer { font-size: 8pt; text-align: center; margin-top: 8px; }
+          </style>
+        </head>
+        <body>
+          <div class="center bold">MERCADO MICAELA BASTIDAS</div>
+          <div class="center" style="font-size: 8.5pt;">ASOCIACIÓN DE PEQUEÑOS COMERCIANTES</div>
+          <div class="center" style="font-size: 8pt;">RUC: 20486000001 • HUANCAYO</div>
+          <div class="divider"></div>
+
+          <div class="center bold" style="font-size: 10pt;">RECIBO DE ALQUILER DE PUESTO</div>
+          <div class="center bold" style="font-size: 8.5pt;">CONTRATO A PLAZO DETERMINADO</div>
+          <div class="row"><span>RECIBO:</span><span class="bold">${op}</span></div>
+          <div class="row"><span>FECHA PAGO:</span><span>${dateFormatted}</span></div>
+          <div class="row"><span>CUOTA:</span><span class="bold">Cuota ${installment.installmentNumber} de ${contract.monthsCount || contract.installments?.length || 6}</span></div>
+          <div class="row"><span>VENCIMIENTO:</span><span>${installment.dueDate ? new Date(installment.dueDate).toLocaleDateString('es-PE') : '-'}</span></div>
+          <div class="divider"></div>
+
+          <div class="row"><span>INQUILINO:</span><span class="bold">${contract.tenantName}</span></div>
+          <div class="row"><span>DNI:</span><span>${contract.tenantDni}</span></div>
+          <div class="row"><span>PUESTO:</span><span class="bold">Puesto ${contract.stallCode}</span></div>
+          <div class="row"><span>MEDIO:</span><span class="bold">${installment.paymentMethod || 'EFECTIVO'}</span></div>
+          <div class="divider"></div>
+
+          <div class="center" style="font-size: 9pt;">TOTAL CANCELADO</div>
+          <div class="amount">S/ ${Number(installment.totalAmount || contract.monthlyRent).toFixed(2)}</div>
+          <div class="divider"></div>
+
+          <div class="footer">
+            ¡Comprobante Oficial de Caja Interna!<br>
+            Mercado Micaela Bastidas - El Tambo
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 250);
+  };
+
   // ROBUST PRINT CONTRACT FUNCTION (Solves blank document bug)
   const handlePrintContract = () => {
     if (!activeDocContract) return;
@@ -1692,70 +1758,122 @@ export default function AlquileresPage() {
       {/* MODAL HISTORIAL DE PAGOS DEL INQUILINO */}
       {isHistoryModalOpen && historyContract && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-xl shadow-2xl border border-slate-100 max-h-[85vh] overflow-y-auto space-y-4">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-4">
+            <div className="flex justify-between items-start pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-black text-slate-800 uppercase flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800 tracking-wider">
+                  Contrato de Arrendamiento a Plazo Determinado
+                </span>
+                <h3 className="text-lg font-black text-slate-800 uppercase mt-1 flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-indigo-600" />
-                  <span>Historial de Pagos de Alquiler</span>
+                  <span>Cronograma Oficial e Historial de Pagos</span>
                 </h3>
-                <p className="text-xs text-slate-500">
-                  {historyContract.tenantName} • Puesto {historyContract.stallCode} (Canon: S/ {Number(historyContract.monthlyRent).toFixed(2)})
+                <p className="text-xs text-slate-600 font-bold mt-0.5">
+                  {historyContract.tenantName} • DNI: {historyContract.tenantDni} • Puesto: {historyContract.stallCode}
                 </p>
               </div>
-              <button onClick={() => setIsHistoryModalOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
+              <button onClick={() => setIsHistoryModalOpen(false)} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+            {/* Ficha Resumen de Plazo Determinado */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl p-3 text-xs">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">N° Contrato:</span>
+                <span className="font-mono font-black text-indigo-900 block">{historyContract.contractNumber}</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Plazo Determinado:</span>
+                <span className="font-bold text-slate-800 block">
+                  {historyContract.monthsCount || historyContract.installments?.length || 6} Meses
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">
+                  {historyContract.startDate ? new Date(historyContract.startDate).toLocaleDateString('es-PE') : '01/01/2026'} al{' '}
+                  {historyContract.endDate ? new Date(historyContract.endDate).toLocaleDateString('es-PE') : '30/06/2026'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Canon Mensual:</span>
+                <span className="font-mono font-black text-emerald-700 text-sm block">
+                  S/ {Number(historyContract.monthlyRent).toFixed(2)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Garantía / Depósito:</span>
+                <span className="font-mono font-black text-slate-700 block">
+                  S/ {Number(historyContract.depositAmount || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Tabla de Cronograma de Pagos */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto shadow-sm">
               <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px]">
+                <thead className="bg-slate-900 text-white font-black uppercase text-[10px]">
                   <tr>
                     <th className="p-2.5">Cuota</th>
                     <th className="p-2.5">Vencimiento</th>
-                    <th className="p-2.5 text-right">Monto</th>
+                    <th className="p-2.5 text-right">Monto Cuota</th>
                     <th className="p-2.5 text-center">Estado</th>
-                    <th className="p-2.5 text-center">Acción</th>
+                    <th className="p-2.5">Fecha de Pago</th>
+                    <th className="p-2.5">N° Comprobante</th>
+                    <th className="p-2.5 text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(historyContract.installments || []).map((inst: any) => {
                     const isPaid = inst.status === 'PAGADO';
                     return (
-                      <tr key={inst.installmentNumber} className="hover:bg-slate-50 transition">
-                        <td className="p-2.5 font-bold font-mono text-slate-800">
+                      <tr key={inst.installmentNumber} className={`hover:bg-slate-50 transition ${isPaid ? 'bg-emerald-50/20' : ''}`}>
+                        <td className="p-2.5 font-bold font-mono text-slate-900">
                           Cuota N° {inst.installmentNumber}
                         </td>
                         <td className="p-2.5 font-mono text-slate-600">
                           {inst.dueDate ? new Date(inst.dueDate).toLocaleDateString('es-PE') : '-'}
                         </td>
-                        <td className="p-2.5 font-mono font-bold text-right text-emerald-700">
+                        <td className="p-2.5 font-mono font-black text-right text-emerald-700">
                           S/ {Number(inst.totalAmount || historyContract.monthlyRent).toFixed(2)}
                         </td>
                         <td className="p-2.5 text-center">
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                              isPaid ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
                             }`}
                           >
                             {inst.status || 'PENDIENTE'}
                           </span>
                         </td>
+                        <td className="p-2.5 font-mono text-slate-600 text-[11px]">
+                          {inst.paidAt ? new Date(inst.paidAt).toLocaleDateString('es-PE') : '-'}
+                        </td>
+                        <td className="p-2.5 font-mono font-bold text-slate-700 text-[11px]">
+                          {inst.receiptNumber || '-'}
+                        </td>
                         <td className="p-2.5 text-center">
-                          {!isPaid ? (
-                            <button
-                              onClick={() => {
-                                setIsHistoryModalOpen(false);
-                                handleOpenPayModal(historyContract);
-                              }}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold"
-                            >
-                              Cobrar
-                            </button>
-                          ) : (
-                            <span className="text-[10px] font-mono text-slate-400">Cancelado</span>
-                          )}
+                          <div className="flex items-center justify-center space-x-1.5">
+                            {!isPaid ? (
+                              <button
+                                onClick={() => {
+                                  setIsHistoryModalOpen(false);
+                                  handleOpenPayModal(historyContract);
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black shadow-sm transition flex items-center space-x-1"
+                              >
+                                <DollarSign className="w-3 h-3" />
+                                <span>Cobrar</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handlePrintRentalReceipt(historyContract, inst)}
+                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-bold border border-indigo-200 transition flex items-center space-x-1"
+                                title="Reimprimir Comprobante de Cobro"
+                              >
+                                <Printer className="w-3 h-3" />
+                                <span>Recibo</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1764,11 +1882,50 @@ export default function AlquileresPage() {
               </table>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
+            {/* Resumen de Amortización */}
+            <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-4">
+                <span className="font-bold text-slate-700">
+                  Total Pagado:{' '}
+                  <span className="font-mono font-black text-emerald-800">
+                    S/{' '}
+                    {(historyContract.installments || [])
+                      .filter((i: any) => i.status === 'PAGADO')
+                      .reduce((acc: number, i: any) => acc + Number(i.totalAmount || historyContract.monthlyRent), 0)
+                      .toFixed(2)}
+                  </span>
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="font-bold text-slate-700">
+                  Saldo Restante:{' '}
+                  <span className="font-mono font-black text-amber-800">
+                    S/{' '}
+                    {(historyContract.installments || [])
+                      .filter((i: any) => i.status !== 'PAGADO')
+                      .reduce((acc: number, i: any) => acc + Number(i.totalAmount || historyContract.monthlyRent), 0)
+                      .toFixed(2)}
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsHistoryModalOpen(false);
+                  handleOpenContractDoc(historyContract.id);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Ver Contrato Imprimible (A4)</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsHistoryModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50"
+                className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 text-xs"
               >
                 Cerrar
               </button>
