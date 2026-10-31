@@ -19,15 +19,84 @@ export class SanitaryServicesService {
     });
   }
 
-  async getHistory() {
+  async getHistory(year?: number, month?: number) {
+    const where: any = {};
+    if (year && month) {
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+      where.startTime = { gte: startDate, lte: endDate };
+    } else if (year) {
+      const startDate = new Date(year, 0, 1);
+      const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
+      where.startTime = { gte: startDate, lte: endDate };
+    }
+
     return this.prisma.sanitaryServiceSession.findMany({
+      where,
       include: {
         operator: { select: { fullName: true } },
         tickets: true,
       },
       orderBy: { startTime: 'desc' },
-      take: 50,
+      take: 500,
     });
+  }
+
+  async bulkHistoricalSessions(
+    items: Array<{
+      date: string;
+      urinalCount: number;
+      toiletCount: number;
+      initialTicketNumber?: number;
+      finalTicketNumber?: number;
+      totalCollected?: number;
+      operatorName?: string;
+      notes?: string;
+    }>,
+    userId?: string,
+  ) {
+    const operator = await this.prisma.user.findFirst();
+    const results = [];
+
+    for (const item of items) {
+      const sessionDate = new Date(`${item.date}T12:00:00Z`);
+      const urinalCount = Number(item.urinalCount || 0);
+      const toiletCount = Number(item.toiletCount || 0);
+      const urinalPrice = 0.5;
+      const toiletPrice = 1.0;
+      const urinalTotal = Number((urinalCount * urinalPrice).toFixed(2));
+      const toiletTotal = Number((toiletCount * toiletPrice).toFixed(2));
+      const calculatedTotal = Number((urinalTotal + toiletTotal).toFixed(2));
+      const totalCollected = item.totalCollected !== undefined ? Number(item.totalCollected) : calculatedTotal;
+
+      const created = await this.prisma.sanitaryServiceSession.create({
+        data: {
+          operatorId: userId || operator?.id || '',
+          startTime: sessionDate,
+          endTime: new Date(sessionDate.getTime() + 8 * 3600 * 1000),
+          urinalCount,
+          urinalPrice,
+          urinalTotal,
+          toiletCount,
+          toiletPrice,
+          toiletTotal,
+          totalCollected,
+          initialTicketNumber: item.initialTicketNumber || null,
+          finalTicketNumber: item.finalTicketNumber || null,
+          declaredTicketCount: item.finalTicketNumber && item.initialTicketNumber ? item.finalTicketNumber - item.initialTicketNumber + 1 : null,
+          status: SessionStatus.CERRADO,
+          notes: item.notes || `Registro Histórico SSHH ${item.date}${item.operatorName ? ` (${item.operatorName})` : ''}`,
+        },
+      });
+      results.push(created);
+    }
+
+    return {
+      success: true,
+      count: results.length,
+      sessions: results,
+      message: `${results.length} turnos/sesiones históricas de SSHH guardadas con éxito.`,
+    };
   }
 
   async getDailyReport(dateStr?: string) {

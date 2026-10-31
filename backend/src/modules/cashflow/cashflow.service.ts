@@ -372,6 +372,82 @@ export class CashflowService {
     return expense;
   }
 
+  async createIncome(
+    dto: {
+      concept: string;
+      amount: number;
+      date?: string;
+      reference?: string;
+      category?: string;
+      paymentMethod?: PaymentMethod;
+      notes?: string;
+    },
+    userId?: string,
+  ) {
+    const amount = Number(dto.amount);
+    const date = dto.date ? new Date(dto.date) : new Date();
+
+    // 1. Obtener o crear concepto OTROS_INGRESOS
+    let concept = await this.prisma.paymentConcept.findUnique({
+      where: { code: 'OTROS_INGRESOS' },
+    });
+    if (!concept) {
+      concept = await this.prisma.paymentConcept.create({
+        data: {
+          code: 'OTROS_INGRESOS',
+          name: 'Otros Ingresos y Donaciones',
+          periodicity: 'POR_USO' as any,
+          description: 'Ingresos manuales, extraordinarios o históricos',
+        },
+      });
+    }
+
+    const count = await this.prisma.payment.count();
+    const opNumber = `ING-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(count + 1).padStart(5, '0')}`;
+
+    // 2. Vincular a caja activa si existe
+    let cashRegisterId: string | null = null;
+    const activeRegister = await this.prisma.cashRegister.findFirst({
+      where: { status: CashRegisterStatus.ABIERTO },
+      orderBy: { openedAt: 'desc' },
+    });
+    if (activeRegister) {
+      cashRegisterId = activeRegister.id;
+      await this.prisma.cashMovement.create({
+        data: {
+          cashRegisterId: activeRegister.id,
+          type: CashMovementType.INGRESO,
+          concept: `[${dto.category || 'OTROS'}] ${dto.concept.trim()}`,
+          amount,
+          reference: dto.reference || opNumber,
+          userId: userId || activeRegister.openedById,
+        },
+      });
+    }
+
+    // 3. Crear registro oficial de Payment con fecha exacta (pasada o actual)
+    const firstUser = await this.prisma.user.findFirst();
+    const payment = await this.prisma.payment.create({
+      data: {
+        operationNumber: opNumber,
+        conceptId: concept.id,
+        amount,
+        period: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        paymentMethod: dto.paymentMethod || PaymentMethod.EFECTIVO,
+        cashRegisterId,
+        collectedById: userId || firstUser?.id || '',
+        notes: `[${dto.category || 'OTROS'}] ${dto.concept.trim()}${dto.notes ? ` - ${dto.notes.trim()}` : ''}`,
+        paidAt: date,
+      },
+      include: {
+        concept: true,
+        collectedBy: { select: { fullName: true } },
+      },
+    });
+
+    return payment;
+  }
+
   async createExpense(dto: CreateExpenseDto, userId?: string) {
     const count = await this.prisma.marketExpense.count();
     const code = 'EGR-' + String(count + 1).padStart(5, '0');

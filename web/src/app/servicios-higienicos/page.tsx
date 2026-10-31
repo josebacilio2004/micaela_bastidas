@@ -18,6 +18,10 @@ import {
   QrCode,
   ShieldCheck,
   Search,
+  Upload,
+  Trash2,
+  Database,
+  Filter,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -26,6 +30,31 @@ export default function ServiciosHigienicosPage() {
   const [activeSession, setActiveSession] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filtros Historial Años y Meses
+  const [filterYear, setFilterYear] = useState<string>('2026');
+  const [filterMonth, setFilterMonth] = useState<string>('');
+
+  // Modal Carga Masiva Histórica
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [submittingBulk, setSubmittingBulk] = useState(false);
+  const [bulkRows, setBulkRows] = useState<Array<{
+    date: string;
+    operatorId: string;
+    urinalCount: number;
+    toiletCount: number;
+    totalCollected: number;
+    notes: string;
+  }>>([
+    {
+      date: '2026-01-02',
+      operatorId: '',
+      urinalCount: 140,
+      toiletCount: 70,
+      totalCollected: 140,
+      notes: 'Carga histórica SSHH enero 2026',
+    },
+  ]);
 
   // Modal states
   const [isStartModalOpen, setIsStartModalOpen] = useState(false);
@@ -71,11 +100,26 @@ export default function ServiciosHigienicosPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const fetchHistory = async () => {
+    try {
+      const q = new URLSearchParams();
+      if (filterYear) q.append('year', filterYear);
+      if (filterMonth) q.append('month', filterMonth);
+      const histRes = await apiRequest(`/sanitary-services/history?${q.toString()}`);
+      setHistory(histRes || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const fetchSSHH = async () => {
     setLoading(true);
     try {
+      const q = new URLSearchParams();
+      if (filterYear) q.append('year', filterYear);
+      if (filterMonth) q.append('month', filterMonth);
       const [histRes, activeRes, usersRes] = await Promise.all([
-        apiRequest('/sanitary-services/history'),
+        apiRequest(`/sanitary-services/history?${q.toString()}`),
         apiRequest('/sanitary-services/active').catch(() => null),
         apiRequest('/users').catch(() => []),
       ]);
@@ -95,6 +139,70 @@ export default function ServiciosHigienicosPage() {
   useEffect(() => {
     fetchSSHH();
   }, []);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [filterYear, filterMonth]);
+
+  const addBulkRow = () => {
+    const lastDate = bulkRows.length > 0 ? bulkRows[bulkRows.length - 1].date : '2026-01-01';
+    const nextDateObj = new Date(lastDate);
+    nextDateObj.setDate(nextDateObj.getDate() + 1);
+    const nextDate = nextDateObj.toISOString().split('T')[0];
+
+    setBulkRows((prev) => [
+      ...prev,
+      {
+        date: nextDate,
+        operatorId: selectedOperatorId || (users[0]?.id || ''),
+        urinalCount: 100,
+        toiletCount: 50,
+        totalCollected: 100,
+        notes: 'Registro histórico',
+      },
+    ]);
+  };
+
+  const removeBulkRow = (index: number) => {
+    setBulkRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateBulkRow = (index: number, field: string, val: any) => {
+    setBulkRows((prev) => {
+      const next = [...prev];
+      const row = { ...next[index], [field]: val };
+      if (field === 'urinalCount' || field === 'toiletCount') {
+        const u = field === 'urinalCount' ? Number(val) || 0 : Number(row.urinalCount) || 0;
+        const t = field === 'toiletCount' ? Number(val) || 0 : Number(row.toiletCount) || 0;
+        row.totalCollected = Number((u * 0.5 + t * 1.0).toFixed(2));
+      }
+      next[index] = row;
+      return next;
+    });
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bulkRows.length === 0) {
+      alert('Debe agregar al menos un registro para cargar.');
+      return;
+    }
+
+    try {
+      setSubmittingBulk(true);
+      const res = await apiRequest('/sanitary-services/bulk-historical', {
+        method: 'POST',
+        body: JSON.stringify({ sessions: bulkRows }),
+      });
+      alert(`✓ Carga histórica completada con éxito. Se guardaron ${res.count || bulkRows.length} turnos.`);
+      setIsBulkModalOpen(false);
+      fetchHistory();
+    } catch (err: any) {
+      alert(err.message || 'Error al cargar turnos históricos de SSHH');
+    } finally {
+      setSubmittingBulk(false);
+    }
+  };
 
   const handleStartSession = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,6 +374,14 @@ export default function ServiciosHigienicosPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setIsBulkModalOpen(true)}
+            className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
+            title="Cargar turnos históricos de SSHH de meses y años anteriores"
+          >
+            <Database className="w-4 h-4" />
+            <span>Cargar Historial en Masa</span>
+          </button>
           <button
             onClick={openReportModal}
             className="flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition"
@@ -459,9 +575,65 @@ export default function ServiciosHigienicosPage() {
 
       {/* Historial de Turnos Diarios */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="font-black text-xs uppercase tracking-wider text-slate-700">Historial de Sesiones Diarias de SSHH</h3>
-          <span className="text-xs text-slate-400 font-bold">{history.length} registro(s)</span>
+        <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-black text-xs uppercase tracking-wider text-slate-700">
+              Historial de Sesiones Diarias de SSHH
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Registros históricos de turnos, conteo de servicios y recaudaciones.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Filtro Año */}
+            <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-xl">
+              <span className="text-slate-400 font-bold text-[10px] uppercase">Año:</span>
+              <select
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+                className="bg-transparent font-bold text-slate-700 focus:outline-none"
+              >
+                <option value="">Todos los años</option>
+                <option value="2026">2026</option>
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+              </select>
+            </div>
+
+            {/* Filtro Mes */}
+            <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-xl">
+              <span className="text-slate-400 font-bold text-[10px] uppercase">Mes:</span>
+              <select
+                value={filterMonth}
+                onChange={(e) => setFilterMonth(e.target.value)}
+                className="bg-transparent font-bold text-slate-700 focus:outline-none"
+              >
+                <option value="">Todos los meses</option>
+                <option value="1">Enero</option>
+                <option value="2">Febrero</option>
+                <option value="3">Marzo</option>
+                <option value="4">Abril</option>
+                <option value="5">Mayo</option>
+                <option value="6">Junio</option>
+                <option value="7">Julio</option>
+                <option value="8">Agosto</option>
+                <option value="9">Septiembre</option>
+                <option value="10">Octubre</option>
+                <option value="11">Noviembre</option>
+                <option value="12">Diciembre</option>
+              </select>
+            </div>
+
+            {/* Badge Total */}
+            <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl text-emerald-800 font-bold text-[11px] flex items-center space-x-1">
+              <span>Total Selección:</span>
+              <span className="font-mono font-black text-emerald-900">
+                S/ {history.reduce((acc, h) => acc + Number(h.totalCollected || 0), 0).toFixed(2)}
+              </span>
+              <span className="text-slate-400">({history.length} turnos)</span>
+            </div>
+          </div>
         </div>
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
@@ -1143,6 +1315,169 @@ export default function ServiciosHigienicosPage() {
                 Cerrar Ventana
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Cargar Turnos Históricos en Masa */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl relative border border-slate-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+              <div className="flex items-center space-x-2">
+                <Database className="w-5 h-5 text-indigo-600" />
+                <div>
+                  <h2 className="text-base font-black text-slate-800 uppercase tracking-tight">
+                    Carga Masiva de Turnos Históricos SSHH
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Registre turnos pasados de meses y años anteriores (desde enero 2026 y previos) para consolidarlos en el historial.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBulkModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkSubmit} className="flex-1 overflow-hidden flex flex-col pt-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-600 uppercase">
+                  Filas a registrar ({bulkRows.length} días)
+                </span>
+                <button
+                  type="button"
+                  onClick={addBulkRow}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold flex items-center space-x-1 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Agregar Otro Día</span>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-bold uppercase tracking-wider border-b border-slate-200 sticky top-0 z-10">
+                    <tr>
+                      <th className="p-2.5">Fecha</th>
+                      <th className="p-2.5">Operador</th>
+                      <th className="p-2.5">Miccionarios (0.50)</th>
+                      <th className="p-2.5">Retretes (1.00)</th>
+                      <th className="p-2.5">Total (S/)</th>
+                      <th className="p-2.5">Observaciones</th>
+                      <th className="p-2.5 text-center">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {bulkRows.map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-2">
+                          <input
+                            type="date"
+                            required
+                            value={row.date}
+                            onChange={(e) => updateBulkRow(idx, 'date', e.target.value)}
+                            className="w-32 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={row.operatorId}
+                            onChange={(e) => updateBulkRow(idx, 'operatorId', e.target.value)}
+                            className="w-36 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
+                          >
+                            <option value="">-- Asignado --</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.fullName}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.urinalCount}
+                            onChange={(e) => updateBulkRow(idx, 'urinalCount', e.target.value)}
+                            className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.toiletCount}
+                            onChange={(e) => updateBulkRow(idx, 'toiletCount', e.target.value)}
+                            className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="number"
+                            step="0.50"
+                            min="0"
+                            value={row.totalCollected}
+                            onChange={(e) => updateBulkRow(idx, 'totalCollected', parseFloat(e.target.value) || 0)}
+                            className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-black text-emerald-700"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <input
+                            type="text"
+                            placeholder="Notas del día..."
+                            value={row.notes}
+                            onChange={(e) => updateBulkRow(idx, 'notes', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs"
+                          />
+                        </td>
+                        <td className="p-2 text-center">
+                          {bulkRows.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeBulkRow(idx)}
+                              className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg"
+                              title="Eliminar fila"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 mt-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs">
+                  <span className="text-slate-500 font-bold">Total Consolidado de la Carga: </span>
+                  <span className="font-mono font-black text-base text-emerald-700">
+                    S/ {bulkRows.reduce((acc, r) => acc + (Number(r.totalCollected) || 0), 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkModalOpen(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingBulk}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow disabled:opacity-50 flex items-center space-x-1.5"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>{submittingBulk ? 'Guardando...' : '💾 Guardar Historial en Masa'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

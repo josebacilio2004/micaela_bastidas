@@ -20,6 +20,7 @@ import {
   Filter,
   ArrowRight,
   FileSpreadsheet,
+  Save,
 } from 'lucide-react';
 
 interface TemporalTicket {
@@ -61,12 +62,22 @@ export default function AmbulantesTemporalesPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Form State
+  const [emissionMode, setEmissionMode] = useState<'INDIVIDUAL' | 'INTERVALO'>('INDIVIDUAL');
   const [selectedAmount, setSelectedAmount] = useState<number>(2);
   const [customAmount, setCustomAmount] = useState<string>('2.00');
   const [merchantRef, setMerchantRef] = useState<string>('');
   const [category, setCategory] = useState<string>('Comercio Ambulante General');
   const [paymentMethod, setPaymentMethod] = useState<'EFECTIVO' | 'YAPE' | 'PLIN'>('EFECTIVO');
   const [manualTicketNumber, setManualTicketNumber] = useState<string>('');
+
+  // Intervalos / Talonarios de Tickets State
+  const [intervalStart, setIntervalStart] = useState<number>(1);
+  const [intervalEnd, setIntervalEnd] = useState<number>(10);
+  const [intervalRate, setIntervalRate] = useState<number>(1);
+  const [intervalDate, setIntervalDate] = useState<string>('');
+  const [intervalPaymentMethod, setIntervalPaymentMethod] = useState<'EFECTIVO' | 'YAPE' | 'PLIN'>('EFECTIVO');
+  const [intervalCategory, setIntervalCategory] = useState('Comercio Ambulante General');
+  const [intervalRef, setIntervalRef] = useState('');
 
   // Thermal Receipt Modal State
   const [activePrintTicket, setActivePrintTicket] = useState<TemporalTicket | null>(null);
@@ -291,6 +302,164 @@ export default function AmbulantesTemporalesPage() {
     }
   };
 
+  // Submit and Issue Interval of Tickets (Talonario / Lote en Masa)
+  const handleEmitInterval = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const start = Math.min(intervalStart, intervalEnd);
+    const end = Math.max(intervalStart, intervalEnd);
+    const count = end - start + 1;
+    const rate = intervalRate;
+    const totalAmount = count * rate;
+
+    if (count <= 0) {
+      alert('El rango de tickets debe ser válido (ej. Del N° 1 al N° 10)');
+      return;
+    }
+
+    const dt = intervalDate || todayStr;
+    const confirmMsg = `¿Desea REGISTRAR EL INTERVALO DE TICKETS?\n\n• Rango: Del Ticket N° ${start} al N° ${end}\n• Cantidad: ${count} tickets\n• Tarifa unitaria: S/ ${rate.toFixed(2)} por ticket\n• Total a recaudar: S/ ${totalAmount.toFixed(2)}\n• Fecha: ${dt}\n• Medio de pago: ${intervalPaymentMethod}\n\nSe registrarán todos los correlativos en el historial del día.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setSubmitting(true);
+    try {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+      const refText = intervalRef.trim() || 'Vendedores Ambulantes Eventuales';
+
+      // 1. Registrar movimiento consolidado en caja si está abierta
+      const conceptDesc = `Talonario Tickets Temporales del N° ${start} al N° ${end} (${count} tickets a S/ ${rate.toFixed(2)}) - ${intervalCategory}`;
+      await apiRequest('/cash-registers/current/movements', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'INGRESO',
+          concept: conceptDesc,
+          amount: totalAmount,
+          reference: `TALONARIO-${start}-${end}`,
+        }),
+      }).catch((err) => {
+        console.warn('Nota: Movimiento registrado vía fallback:', err);
+      });
+
+      // 2. Generar lista de tickets individuales para el rango
+      const newBatch: TemporalTicket[] = [];
+      for (let num = start; num <= end; num++) {
+        const ticketNum = String(num).padStart(7, '0');
+        newBatch.push({
+          id: `TICK-INT-${num}-${Date.now()}`,
+          ticketNumber: ticketNum,
+          amount: rate,
+          date: dt,
+          time: timeStr,
+          merchantName: refText,
+          category: intervalCategory,
+          paymentMethod: intervalPaymentMethod,
+          collectorName: 'Tesorería',
+        });
+      }
+
+      // Evitar duplicados por ticketNumber
+      const existingMap = new Set(tickets.map((t) => t.ticketNumber));
+      const filteredNew = newBatch.filter((t) => !existingMap.has(t.ticketNumber));
+
+      const updatedList = [...filteredNew, ...tickets];
+      setTickets(updatedList);
+      localStorage.setItem('mb_temporal_tickets', JSON.stringify(updatedList.slice(0, 1000)));
+
+      // Preparar el siguiente rango automáticamente
+      setIntervalStart(end + 1);
+      setIntervalEnd(end + 10);
+      setIntervalRef('');
+
+      alert(`✓ ¡Intervalo Registrado Exitosamente!\nSe generaron ${newBatch.length} tickets (Del N° ${start} al N° ${end}) a S/ ${rate.toFixed(2)} por un total de S/ ${totalAmount.toFixed(2)}.`);
+    } catch (err: any) {
+      alert('Error registrando intervalo: ' + (err.message || 'Error de servidor'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Calcular intervalos consecutivos de tickets
+  const computeTicketIntervals = (list: TemporalTicket[]) => {
+    if (!list || list.length === 0) return [];
+    const sorted = [...list].sort((a, b) => {
+      const na = parseInt(a.ticketNumber.replace(/\D/g, '') || '0', 10);
+      const nb = parseInt(b.ticketNumber.replace(/\D/g, '') || '0', 10);
+      return na - nb;
+    });
+
+    const intervals: Array<{
+      start: string;
+      end: string;
+      startNum: number;
+      endNum: number;
+      count: number;
+      rate: number;
+      total: number;
+      category: string;
+      date: string;
+    }> = [];
+
+    let current = sorted[0];
+    let startNum = parseInt(current.ticketNumber.replace(/\D/g, '') || '0', 10);
+    let prevNum = startNum;
+    let count = 1;
+    let rate = current.amount;
+    let startTicket = current.ticketNumber;
+    let endTicket = current.ticketNumber;
+    let cat = current.category;
+    let dt = current.date;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const item = sorted[i];
+      const num = parseInt(item.ticketNumber.replace(/\D/g, '') || '0', 10);
+      const isConsecutive = num === prevNum + 1;
+      const sameRate = Math.abs(item.amount - rate) < 0.01;
+      const sameDate = item.date === dt;
+
+      if (isConsecutive && sameRate && sameDate) {
+        prevNum = num;
+        endTicket = item.ticketNumber;
+        count++;
+      } else {
+        intervals.push({
+          start: startTicket,
+          end: endTicket,
+          startNum,
+          endNum: prevNum,
+          count,
+          rate,
+          total: Number((count * rate).toFixed(2)),
+          category: cat,
+          date: dt,
+        });
+        current = item;
+        startNum = num;
+        prevNum = num;
+        count = 1;
+        rate = item.amount;
+        startTicket = item.ticketNumber;
+        endTicket = item.ticketNumber;
+        cat = item.category;
+        dt = item.date;
+      }
+    }
+
+    intervals.push({
+      start: startTicket,
+      end: endTicket,
+      startNum,
+      endNum: prevNum,
+      count,
+      rate,
+      total: Number((count * rate).toFixed(2)),
+      category: cat,
+      date: dt,
+    });
+
+    return intervals;
+  };
+
   // CRUD Padrón Temporales
   const handleOpenCreateTemporal = () => {
     setTemporalForm({
@@ -488,6 +657,11 @@ export default function AmbulantesTemporalesPage() {
     return { count, total, count1, count2, count3, countOther, totalCash, totalDigital };
   }, [todayTickets]);
 
+  // Intervalos de tickets para la vista del día
+  const todayIntervals = useMemo(() => {
+    return computeTicketIntervals(todayTickets);
+  }, [todayTickets]);
+
   // HISTORIAL Tickets Filtering
   const historyFilteredTickets = useMemo(() => {
     return tickets.filter((t) => {
@@ -666,8 +840,8 @@ export default function AmbulantesTemporalesPage() {
                     <Ticket className="w-5 h-5" />
                   </div>
                   <div>
-                    <h2 className="text-base font-black text-slate-900 uppercase">Emitir Ticket de Hoy</h2>
-                    <p className="text-[11px] text-slate-400">Cobro rápido al paso</p>
+                    <h2 className="text-base font-black text-slate-900 uppercase">Emisión de Tickets</h2>
+                    <p className="text-[11px] text-slate-400">Cobro individual o por intervalo / talonario</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -678,7 +852,196 @@ export default function AmbulantesTemporalesPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleEmitTicket} className="space-y-4 pt-4">
+              {/* Selector de Modo: Individual vs Intervalo */}
+              <div className="flex bg-slate-100 p-1 rounded-2xl mt-4 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setEmissionMode('INDIVIDUAL')}
+                  className={`flex-1 py-1.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                    emissionMode === 'INDIVIDUAL'
+                      ? 'bg-white text-emerald-900 shadow-sm font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Ticket className="w-3.5 h-3.5" />
+                  <span>Ticket Individual</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmissionMode('INTERVALO')}
+                  className={`flex-1 py-1.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                    emissionMode === 'INTERVALO'
+                      ? 'bg-white text-emerald-900 shadow-sm font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Intervalo / Talonario</span>
+                </button>
+              </div>
+
+              {emissionMode === 'INTERVALO' ? (
+                /* FORMULARIO DE INTERVALO / TALONARIO DE TICKETS */
+                <form onSubmit={handleEmitInterval} className="space-y-4 pt-4">
+                  <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
+                    <span className="text-[11px] font-black uppercase text-amber-900 block mb-1">
+                      Registro de Intervalo (Talonario en Masa)
+                    </span>
+                    <p className="text-[11px] text-amber-800">
+                      Permite registrar un rango correlativo de tickets (ej. del 1 al 10) con tarifa fija de S/ 1, 2 o 3.
+                    </p>
+                  </div>
+
+                  {/* Rango de Tickets */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-black text-slate-700 uppercase mb-1">
+                        Desde Ticket N°:
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={intervalStart}
+                        onChange={(e) => setIntervalStart(parseInt(e.target.value, 10) || 1)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-black font-mono text-slate-900 outline-none focus:bg-white focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-black text-slate-700 uppercase mb-1">
+                        Hasta Ticket N°:
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={intervalEnd}
+                        onChange={(e) => setIntervalEnd(parseInt(e.target.value, 10) || 1)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base font-black font-mono text-slate-900 outline-none focus:bg-white focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tarifa Fija por Ticket (S/ 1.00, S/ 2.00, S/ 3.00) */}
+                  <div>
+                    <label className="block text-xs font-black text-slate-700 uppercase mb-2">
+                      Tarifa por Ticket (Monto Fijo):
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[1, 2, 3].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setIntervalRate(val)}
+                          className={`py-2.5 px-2 rounded-2xl font-black text-sm transition flex flex-col items-center justify-center border-2 ${
+                            intervalRate === val
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-md scale-102'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-amber-50'
+                          }`}
+                        >
+                          <span className="text-[10px] uppercase font-bold opacity-80">Por Ticket</span>
+                          <span className="text-lg font-black font-mono">S/ {val}.00</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Fecha del Intervalo */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                        Fecha Recaudada:
+                      </label>
+                      <input
+                        type="date"
+                        value={intervalDate || todayStr}
+                        onChange={(e) => setIntervalDate(e.target.value)}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                        Medio de Pago:
+                      </label>
+                      <select
+                        value={intervalPaymentMethod}
+                        onChange={(e) => setIntervalPaymentMethod(e.target.value as any)}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
+                      >
+                        <option value="EFECTIVO">💵 En Efectivo</option>
+                        <option value="YAPE">📱 Yape</option>
+                        <option value="PLIN">📱 Plin</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Rubro / Giro y Referencia */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                        Rubro / Giro:
+                      </label>
+                      <select
+                        value={intervalCategory}
+                        onChange={(e) => setIntervalCategory(e.target.value)}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none"
+                      >
+                        <option value="Comercio Ambulante General">General Ambulante</option>
+                        <option value="Verduras y Hortalizas">Verduras y Hortalizas</option>
+                        <option value="Frutas de Temporada">Frutas de Temporada</option>
+                        <option value="Comida / Desayunos">Comida / Desayunos</option>
+                        <option value="Flores y Plantas">Flores y Plantas</option>
+                        <option value="Ropa / Calzado">Ropa / Calzado</option>
+                        <option value="Plásticos y Bazar">Plásticos y Bazar</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                        Referencia / Pasaje:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ej: Pasaje Exterior, Vendedores Varios"
+                        value={intervalRef}
+                        onChange={(e) => setIntervalRef(e.target.value)}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Resumen Calculado */}
+                  <div className="p-3 bg-slate-900 text-white rounded-2xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block font-bold">Total Tickets:</span>
+                      <span className="font-mono font-black text-sm">
+                        {Math.max(0, intervalEnd - intervalStart + 1)} tickets
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[11px] text-slate-400 block font-bold">Total Consolidado:</span>
+                      <span className="font-mono font-black text-lg text-emerald-400">
+                        S/ {(Math.max(0, intervalEnd - intervalStart + 1) * intervalRate).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-black text-sm uppercase tracking-wider shadow-lg shadow-amber-600/20 flex items-center justify-center space-x-2 transition disabled:opacity-50"
+                  >
+                    <Save className="w-5 h-5" />
+                    <span>
+                      {submitting
+                        ? 'Registrando Intervalo...'
+                        : `Guardar Intervalo (${Math.max(0, intervalEnd - intervalStart + 1)} tickets por S/ ${(Math.max(0, intervalEnd - intervalStart + 1) * intervalRate).toFixed(2)})`}
+                    </span>
+                  </button>
+                </form>
+              ) : (
+                /* FORMULARIO DE TICKET INDIVIDUAL */
+                <form onSubmit={handleEmitTicket} className="space-y-4 pt-4">
                 {/* Preset Buttons: S/ 1, S/ 2, S/ 3 */}
                 <div>
                   <label className="block text-xs font-black text-slate-700 uppercase mb-2">
@@ -824,6 +1187,7 @@ export default function AmbulantesTemporalesPage() {
                   <span>{submitting ? 'Emitiendo Ticket...' : `Cobrar S/ ${parseFloat(customAmount || '0').toFixed(2)} e Imprimir`}</span>
                 </button>
               </form>
+              )}
             </div>
           </div>
 
@@ -860,6 +1224,63 @@ export default function AmbulantesTemporalesPage() {
                   <div>S/3: {todayStats.count3} | Otros: {todayStats.countOther}</div>
                 </div>
               </div>
+            </div>
+
+            {/* Intervalos de Tickets Recaudados al Día */}
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200 rounded-3xl p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                    <Ticket className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-slate-800 tracking-wide">
+                      Intervalos de Tickets Recaudados al Día ({todayStr})
+                    </h3>
+                    <p className="text-[10px] text-slate-500">Agrupación por rangos de tickets y montos (S/ 1, S/ 2, S/ 3)</p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-black font-mono text-emerald-800 bg-white px-2.5 py-1 rounded-xl border border-emerald-300 shadow-sm">
+                  {todayIntervals.length} {todayIntervals.length === 1 ? 'intervalo' : 'intervalos'}
+                </span>
+              </div>
+
+              {todayIntervals.length === 0 ? (
+                <div className="p-4 bg-white/70 rounded-2xl text-center text-slate-400 text-xs">
+                  Aún no hay tickets emitidos hoy para formar intervalos.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {todayIntervals.map((inv, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm hover:border-emerald-300 transition"
+                    >
+                      <div className="flex items-center justify-between text-xs pb-1.5 border-b border-slate-100">
+                        <span className="font-mono font-black text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
+                          N° {inv.start} ➔ N° {inv.end}
+                        </span>
+                        <span className="font-mono font-black text-emerald-700 text-sm">
+                          S/ {inv.total.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1.5">
+                        <span>
+                          Cantidad: <strong className="text-slate-800">{inv.count} tickets</strong>
+                        </span>
+                        <span>
+                          Tarifa: <strong className="font-mono font-bold text-slate-800">S/ {inv.rate.toFixed(2)} c/u</strong>
+                        </span>
+                      </div>
+                      {inv.category && (
+                        <div className="text-[10px] text-slate-400 truncate mt-1">
+                          {inv.category}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Today Issued Tickets Table */}

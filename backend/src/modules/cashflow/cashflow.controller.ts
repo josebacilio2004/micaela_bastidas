@@ -67,6 +67,12 @@ export class CashflowController {
     return this.cashflowService.findOneExpense(id);
   }
 
+  @Post('incomes')
+  @ApiOperation({ summary: 'Registrar nuevo ingreso manual o histórico (fechas anteriores)' })
+  async createIncome(@Body() dto: any, @CurrentUser() user: any) {
+    return this.cashflowService.createIncome(dto, user?.id);
+  }
+
   @Post('expenses')
   @ApiOperation({ summary: 'Registrar nuevo egreso del mercado' })
   async createExpense(@Body() dto: CreateExpenseDto, @CurrentUser() user: any) {

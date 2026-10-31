@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
 import {
   Coins,
@@ -15,10 +15,14 @@ import {
   ArrowDownLeft,
   FileCheck2,
   FileText,
+  Download,
+  Save,
+  X,
+  Search,
 } from 'lucide-react';
 
 export default function FondoRotatorioPage() {
-  const [activeTab, setActiveTab] = useState<'PRESTAMOS' | 'COBRANZAS'>('PRESTAMOS');
+  const [activeTab, setActiveTab] = useState<'PRESTAMOS' | 'COBRANZAS' | 'CRONOGRAMA'>('PRESTAMOS');
   const [loans, setLoans] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,15 +37,15 @@ export default function FondoRotatorioPage() {
   // Comerciantes para selector
   const [merchants, setMerchants] = useState<any[]>([]);
 
-  // Form préstamo
+  // Form préstamo (Por defecto Interés 3% mensual según reglamento APCOMA-MB)
   const [loanForm, setLoanForm] = useState({
     merchantId: '',
     borrowerName: '',
     borrowerDni: '',
-    amount: 500,
+    amount: 1000,
     termMonths: 2,
-    interestRate: 5,
-    notes: '',
+    interestRate: 3,
+    notes: 'Incremento de capital de trabajo',
   });
 
   // Form cobranza
@@ -56,6 +60,28 @@ export default function FondoRotatorioPage() {
 
   // Ticket de cobranza para imprimir
   const [printReceiptData, setPrintReceiptData] = useState<any>(null);
+
+  // Search filter para SOLO SOCIOS en Nuevo Préstamo
+  const [socioSearch, setSocioSearch] = useState('');
+
+  // Modal de Extensión de Crédito (Prórroga)
+  const [extensionModal, setExtensionModal] = useState<{
+    isOpen: boolean;
+    loan: any | null;
+    additionalMonths: number;
+    additionalDays: number;
+    additionalInterest: number;
+    extensionReason: string;
+    isSubmitting: boolean;
+  }>({
+    isOpen: false,
+    loan: null,
+    additionalMonths: 1,
+    additionalDays: 15,
+    additionalInterest: 0,
+    extensionReason: 'Prórroga por plazo vencido de 15 días aprobada',
+    isSubmitting: false,
+  });
 
   const fetchData = async () => {
     setLoading(true);
@@ -79,8 +105,28 @@ export default function FondoRotatorioPage() {
     fetchData();
   }, []);
 
+  // Filtrar exclusivamente los 107 socios titulares oficiales del mercado
+  const onlySocios = useMemo(() => {
+    return merchants.filter((m: any) =>
+      m.merchantType?.code === 'SOCIO' ||
+      m.internalCode?.startsWith('MB-') ||
+      (!m.internalCode?.includes('AF-') && !m.internalCode?.includes('INQ-'))
+    );
+  }, [merchants]);
+
+  const filteredSocios = useMemo(() => {
+    if (!socioSearch.trim()) return onlySocios;
+    const q = socioSearch.toLowerCase();
+    return onlySocios.filter(
+      (s: any) =>
+        `${s.lastName} ${s.firstName}`.toLowerCase().includes(q) ||
+        (s.dni && s.dni.includes(q)) ||
+        (s.stall?.code && s.stall.code.toLowerCase().includes(q))
+    );
+  }, [onlySocios, socioSearch]);
+
   const handleSelectMerchant = (merchantId: string) => {
-    const match = merchants.find((m) => m.id === merchantId);
+    const match = onlySocios.find((m) => m.id === merchantId);
     if (match) {
       setLoanForm((prev) => ({
         ...prev,
@@ -95,6 +141,60 @@ export default function FondoRotatorioPage() {
         borrowerName: '',
         borrowerDni: '',
       }));
+    }
+  };
+
+  const handleDownloadDocx = async (loanId: string, orderNumber?: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/revolving-fund/loans/${loanId}/download-docx`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) throw new Error('Error al generar archivo Word');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PRESTAMO-${orderNumber || loanId}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert(err.message || 'Error descargando archivo Word');
+    }
+  };
+
+  const handleExtendLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!extensionModal.loan) return;
+    setExtensionModal((prev) => ({ ...prev, isSubmitting: true }));
+    try {
+      await apiRequest(`/revolving-fund/loans/${extensionModal.loan.id}/extend`, {
+        method: 'POST',
+        body: JSON.stringify({
+          additionalMonths: extensionModal.additionalMonths,
+          additionalDays: extensionModal.additionalDays,
+          additionalInterest: extensionModal.additionalInterest,
+          extensionReason: extensionModal.extensionReason,
+        }),
+      });
+      alert('✓ Extensión de crédito / prórroga otorgada exitosamente.');
+      setExtensionModal({
+        isOpen: false,
+        loan: null,
+        additionalMonths: 1,
+        additionalDays: 15,
+        additionalInterest: 0,
+        extensionReason: '',
+        isSubmitting: false,
+      });
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Error al extender crédito');
+    } finally {
+      setExtensionModal((prev) => ({ ...prev, isSubmitting: false }));
     }
   };
 
@@ -609,6 +709,16 @@ export default function FondoRotatorioPage() {
           <Receipt className="w-4 h-4" />
           <span>2. Cobranzas ({collections.length})</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('CRONOGRAMA')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 ${
+            activeTab === 'CRONOGRAMA' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          <span>3. Cronograma de Pagos</span>
+        </button>
       </div>
 
       {/* Table Content */}
@@ -654,6 +764,8 @@ export default function FondoRotatorioPage() {
                           className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
                             l.status === 'CANCELADO'
                               ? 'bg-emerald-100 text-emerald-800'
+                              : l.status === 'PRORROGADO'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
                               : l.status === 'MOROSO'
                               ? 'bg-rose-100 text-rose-800'
                               : 'bg-blue-100 text-blue-800'
@@ -672,18 +784,46 @@ export default function FondoRotatorioPage() {
                             <FileText className="w-3.5 h-3.5" />
                             <span>Contrato</span>
                           </button>
+                          <button
+                            onClick={() => handleDownloadDocx(l.id, l.orderNumber)}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                            title="Descargar Ficha Oficial en Word (.docx)"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Word</span>
+                          </button>
                           {l.status !== 'CANCELADO' && (
-                            <button
-                              onClick={() => {
-                                handleSelectLoanForCollection(l.id);
-                                setIsCollectionModalOpen(true);
-                              }}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
-                              title="Cobrar Cuota según Cronograma"
-                            >
-                              <Receipt className="w-3.5 h-3.5" />
-                              <span>Cobrar Cuota</span>
-                            </button>
+                            <>
+                              <button
+                                onClick={() => {
+                                  handleSelectLoanForCollection(l.id);
+                                  setIsCollectionModalOpen(true);
+                                }}
+                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                                title="Cobrar Cuota según Cronograma"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                                <span>Cobrar</span>
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setExtensionModal({
+                                    isOpen: true,
+                                    loan: l,
+                                    additionalMonths: 1,
+                                    additionalDays: 15,
+                                    additionalInterest: 0,
+                                    extensionReason: 'Prórroga por plazo de tolerancia (15 días posteriores al mes)',
+                                    isSubmitting: false,
+                                  })
+                                }
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                                title="Otorgar Extensión o Prórroga de Crédito"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Prórroga</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -737,6 +877,184 @@ export default function FondoRotatorioPage() {
         </div>
       )}
 
+      {activeTab === 'CRONOGRAMA' && (
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div>
+              <p className="font-black text-amber-900 uppercase">
+                Cronograma Integral de Pagos y Amortizaciones • Fondo Rotatorio
+              </p>
+              <p className="text-amber-700 mt-0.5">
+                Seguimiento de cuotas, fechas de vencimiento y plazos de gracia/tolerancia de los 107 socios prestatarios.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 text-[11px] font-mono font-bold text-amber-900">
+              <span className="px-2.5 py-1 bg-white rounded-lg border border-amber-300">
+                {loans.filter((l) => l.status !== 'CANCELADO').length} Préstamos Activos
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Préstamo</th>
+                    <th className="p-3">Socio Beneficiario</th>
+                    <th className="p-3">DNI / Puesto</th>
+                    <th className="p-3">Capital & Interés</th>
+                    <th className="p-3">Plazo</th>
+                    <th className="p-3">Progreso de Cuotas</th>
+                    <th className="p-3">Estado</th>
+                    <th className="p-3 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loans.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-slate-400">
+                        No hay cronogramas registrados
+                      </td>
+                    </tr>
+                  ) : (
+                    loans.map((l) => {
+                      const totalMonths = Number(l.termMonths) || 1;
+                      const paidCount = (l.collections || []).length;
+                      const pct = Math.min(100, Math.round((paidCount / totalMonths) * 100));
+                      const totalPaidAmount = (l.collections || []).reduce(
+                        (acc: number, c: any) => acc + Number(c.totalAmount || 0),
+                        0
+                      );
+                      const pendingAmount = Math.max(0, Number(l.totalAmount) - totalPaidAmount);
+
+                      return (
+                        <tr key={l.id} className="hover:bg-slate-50/80">
+                          <td className="p-3 font-mono font-bold text-indigo-700">
+                            <div>{l.orderNumber}</div>
+                            <span className="text-[10px] text-slate-400">{new Date(l.date).toLocaleDateString()}</span>
+                          </td>
+                          <td className="p-3">
+                            <span className="font-bold text-slate-900 block">{l.borrowerName}</span>
+                            {l.notes && (
+                              <span className="text-[10px] text-slate-400 italic line-clamp-1">
+                                {l.notes}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono text-slate-600">
+                            <div>DNI: {l.borrowerDni || 'S/D'}</div>
+                            <span className="text-[10px] text-indigo-600 font-bold">
+                              {l.merchant?.stall?.code ? `Puesto ${l.merchant.stall.code}` : 'P-?'}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono">
+                            <div className="font-bold text-slate-800">S/ {Number(l.amount).toFixed(2)}</div>
+                            <span className="text-[10px] text-emerald-700 font-semibold">
+                              Total: S/ {Number(l.totalAmount).toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="font-bold text-slate-700">{totalMonths} meses</span>
+                            <span className="text-[10px] text-amber-600 block font-mono">{l.interestRate}% mes</span>
+                          </td>
+                          <td className="p-3 min-w-[160px]">
+                            <div className="flex justify-between text-[11px] font-bold mb-1">
+                              <span className="text-emerald-700">{paidCount}/{totalMonths} Cuotas</span>
+                              <span className="text-slate-500 font-mono">{pct}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-600'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-1 flex justify-between font-mono">
+                              <span>Pagado: S/ {totalPaidAmount.toFixed(2)}</span>
+                              <span className="font-bold text-rose-600">Resta: S/ {pendingAmount.toFixed(2)}</span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                l.status === 'CANCELADO'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : l.status === 'PRORROGADO'
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                  : l.status === 'MOROSO'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}
+                            >
+                              {l.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end space-x-1.5">
+                              <button
+                                onClick={() => viewLoanContract(l.id)}
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                                title="Ver Cronograma de Pagos y Cuotas Oficiales"
+                              >
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span>Cronograma</span>
+                              </button>
+                              <button
+                                onClick={() => handleDownloadDocx(l.id, l.orderNumber)}
+                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                                title="Descargar Ficha en Word (.docx)"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Word</span>
+                              </button>
+                              {l.status !== 'CANCELADO' && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      handleSelectLoanForCollection(l.id);
+                                      setIsCollectionModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                                    title="Cobrar Siguiente Cuota"
+                                  >
+                                    <Receipt className="w-3.5 h-3.5" />
+                                    <span>Cobrar</span>
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      setExtensionModal({
+                                        isOpen: true,
+                                        loan: l,
+                                        additionalMonths: 1,
+                                        additionalDays: 15,
+                                        additionalInterest: 0,
+                                        extensionReason: 'Prórroga por plazo de tolerancia (15 días posteriores al mes)',
+                                        isSubmitting: false,
+                                      })
+                                    }
+                                    className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-[11px] font-bold inline-flex items-center space-x-1 transition"
+                                    title="Otorgar Extensión o Prórroga de Crédito"
+                                  >
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>Prórroga</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Nuevo Préstamo */}
       {isLoanModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -744,20 +1062,41 @@ export default function FondoRotatorioPage() {
             <h2 className="text-lg font-black text-slate-800 uppercase mb-4">Registrar Préstamo de Fondo Rotatorio</h2>
 
             <form onSubmit={handleCreateLoan} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Seleccionar Socio / Comerciante</label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Seleccionar Socio Oficial ({onlySocios.length} Socios) *
+                  </label>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                    Exclusivo Socios
+                  </span>
+                </div>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar por apellidos, nombres, DNI o puesto..."
+                    value={socioSearch}
+                    onChange={(e) => setSocioSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
                 <select
                   value={loanForm.merchantId}
                   onChange={(e) => handleSelectMerchant(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 max-h-36"
+                  size={filteredSocios.length > 5 ? 5 : 4}
                 >
-                  <option value="">-- Ingresar Manualmente --</option>
-                  {merchants.map((m) => (
+                  <option value="">-- Seleccionar Socio de la lista --</option>
+                  {filteredSocios.map((m: any) => (
                     <option key={m.id} value={m.id}>
-                      {m.lastName}, {m.firstName} ({m.dni})
+                      {m.lastName}, {m.firstName} | DNI: {m.dni || 'S/D'} | {m.stall?.code ? `Puesto ${m.stall.code}` : 'P-?'}
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-slate-500 italic">
+                  * Por estatuto de APCOMA-MB, sólo los 107 socios titulares habilitados pueden acceder al Fondo Rotatorio.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1403,11 +1742,11 @@ export default function FondoRotatorioPage() {
             </div>
 
             {/* Acciones del Modal */}
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+            <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-xs text-slate-400">
-                Imprime las 4 páginas oficiales A4 adaptadas al formato legal de la asociación.
+                Imprime las 4 páginas oficiales A4 adaptadas al formato legal de la asociación o descarga el documento Word.
               </span>
-              <div className="flex space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setContractData(null)}
@@ -1417,13 +1756,156 @@ export default function FondoRotatorioPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleDownloadDocx(contractData.id || contractData.loanId, contractData.orderNumber)}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs shadow flex items-center space-x-1.5 transition"
+                  title="Descargar plantilla oficial rellena en formato Microsoft Word (.docx)"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Descargar Word (.docx)</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handlePrintLoanContract}
                   className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs shadow-lg flex items-center space-x-2 transition"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>Imprimir Todo el Expediente Oficial (4 Páginas A4)</span>
+                  <span>Imprimir Expediente (4 Págs A4)</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Extensión de Crédito / Prórroga */}
+      {extensionModal.isOpen && extensionModal.loan && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-100 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+              <div className="flex items-center space-x-2">
+                <Clock className="w-5 h-5 text-amber-600" />
+                <h2 className="text-base font-black text-slate-800 uppercase">
+                  Extensión de Crédito / Prórroga
+                </h2>
+              </div>
+              <button
+                onClick={() => setExtensionModal((prev) => ({ ...prev, isOpen: false, loan: null }))}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs space-y-1">
+              <p className="font-bold text-amber-900">
+                Préstamo: <span className="font-mono">{extensionModal.loan.orderNumber}</span>
+              </p>
+              <p className="text-amber-800">
+                Socio: <span className="font-bold">{extensionModal.loan.borrowerName}</span> (DNI: {extensionModal.loan.borrowerDni})
+              </p>
+              <p className="text-amber-800">
+                Capital: <span className="font-mono font-bold">S/ {Number(extensionModal.loan.amount).toFixed(2)}</span> • Plazo Actual: {extensionModal.loan.termMonths} mes(es)
+              </p>
+              <p className="text-[11px] text-amber-700 mt-1">
+                * Plazo de tolerancia reglamentario: Normalmente hasta 15 días posteriores al vencimiento de mes.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                    Meses Adicionales
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="12"
+                    value={extensionModal.additionalMonths}
+                    onChange={(e) =>
+                      setExtensionModal((prev) => ({
+                        ...prev,
+                        additionalMonths: Math.max(0, parseInt(e.target.value) || 0),
+                      }))
+                    }
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                    Días de Gracia (Tolerancia)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={extensionModal.additionalDays}
+                    onChange={(e) =>
+                      setExtensionModal((prev) => ({
+                        ...prev,
+                        additionalDays: Math.max(0, parseInt(e.target.value) || 0),
+                      }))
+                    }
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                  Interés Adicional por Prórroga (S/)
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={extensionModal.additionalInterest}
+                  onChange={(e) =>
+                    setExtensionModal((prev) => ({
+                      ...prev,
+                      additionalInterest: Math.max(0, parseFloat(e.target.value) || 0),
+                    }))
+                  }
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-amber-600 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase mb-1">
+                  Motivo / Justificación de la Extensión
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ej: Socio solicita prórroga de 15 días por retraso en ventas de temporada..."
+                  value={extensionModal.extensionReason}
+                  onChange={(e) =>
+                    setExtensionModal((prev) => ({
+                      ...prev,
+                      extensionReason: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setExtensionModal((prev) => ({ ...prev, isOpen: false, loan: null }))}
+                className="px-4 py-2 border border-slate-200 rounded-xl font-bold text-slate-600 text-xs hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={extensionModal.isSubmitting}
+                onClick={handleExtendLoan}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs shadow flex items-center space-x-1.5 disabled:opacity-50"
+              >
+                <Clock className="w-4 h-4" />
+                <span>{extensionModal.isSubmitting ? 'Guardando...' : 'Aplicar Extensión'}</span>
+              </button>
             </div>
           </div>
         </div>

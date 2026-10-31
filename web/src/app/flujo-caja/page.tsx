@@ -239,16 +239,19 @@ export default function FlujoCajaPage() {
 
     try {
       setSubmittingIncome(true);
-      await apiRequest('/cash-registers/current/movements', {
+      await apiRequest('/cashflow/incomes', {
         method: 'POST',
         body: JSON.stringify({
-          type: 'INGRESO',
           concept: incomeForm.concept.trim(),
           amount: amt,
-          reference: incomeForm.receiptNumber?.trim() || `ING-${Date.now().toString().slice(-6)}`,
+          date: incomeForm.date,
+          receiptNumber: incomeForm.receiptNumber?.trim() || `ING-${Date.now().toString().slice(-6)}`,
+          paymentMethod: incomeForm.paymentMethod,
+          notes: incomeForm.notes,
         }),
       });
 
+      alert('✓ Ingreso registrado y guardado exitosamente en el historial');
       setIsIncomeModalOpen(false);
       setIncomeForm({
         concept: '',
@@ -258,7 +261,6 @@ export default function FlujoCajaPage() {
         paymentMethod: 'EFECTIVO',
         notes: '',
       });
-      alert('✓ Otro Ingreso registrado exitosamente en Caja y Flujo.');
       loadAll();
     } catch (err: any) {
       alert(err.message || 'Error al registrar ingreso');
@@ -282,7 +284,51 @@ export default function FlujoCajaPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Rango de Fechas */}
+          {/* Presets de Fechas */}
+          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+            <button
+              onClick={() => setDateRange({ startDate: firstDayOfMonth, endDate: todayStr })}
+              className={`px-2.5 py-1 rounded-lg transition ${
+                dateRange.startDate === firstDayOfMonth && dateRange.endDate === todayStr
+                  ? 'bg-white text-slate-800 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Este Mes
+            </button>
+            <button
+              onClick={() => setDateRange({ startDate: '2026-01-01', endDate: todayStr })}
+              className={`px-2.5 py-1 rounded-lg transition ${
+                dateRange.startDate === '2026-01-01' && dateRange.endDate === todayStr
+                  ? 'bg-white text-emerald-700 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Desde Enero 2026
+            </button>
+            <button
+              onClick={() => setDateRange({ startDate: '2025-01-01', endDate: '2025-12-31' })}
+              className={`px-2.5 py-1 rounded-lg transition ${
+                dateRange.startDate === '2025-01-01' && dateRange.endDate === '2025-12-31'
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Año 2025
+            </button>
+            <button
+              onClick={() => setDateRange({ startDate: '2020-01-01', endDate: todayStr })}
+              className={`px-2.5 py-1 rounded-lg transition ${
+                dateRange.startDate === '2020-01-01'
+                  ? 'bg-white text-slate-800 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Todo el Histórico
+            </button>
+          </div>
+
+          {/* Rango de Fechas Personalizado */}
           <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs shadow-sm">
             <Calendar className="w-4 h-4 text-slate-400" />
             <input

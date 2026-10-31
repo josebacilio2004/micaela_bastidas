@@ -349,8 +349,151 @@ export default function AmbulantesFijosPage() {
     return d > 0 && d <= 31 ? d : 1;
   });
   const [selectedAmbulanteIds, setSelectedAmbulanteIds] = useState<Set<string>>(new Set());
+  const [selectedGridCells, setSelectedGridCells] = useState<Set<string>>(new Set()); // Formato: `${merchantId}-${day}`
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'EFECTIVO' | 'YAPE'>('EFECTIVO');
   const [isSavingBulk, setIsSavingBulk] = useState(false);
+
+  // Toggle celda individual de la cuadrícula
+  const toggleGridCell = (merchantId: string, day: number) => {
+    const key = `${merchantId}-${day}`;
+    if (paymentsMap[key]) return; // Ya está pagado
+
+    setSelectedGridCells((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Toggle columna completa (Día X para todos los ambulantes)
+  const toggleDayColumn = (day: number) => {
+    const unpaidInDay = filteredMerchants
+      .map((m) => `${m.id}-${day}`)
+      .filter((k) => !paymentsMap[k]);
+
+    if (unpaidInDay.length === 0) return;
+
+    setSelectedGridCells((prev) => {
+      const next = new Set(prev);
+      const allSelected = unpaidInDay.every((k) => next.has(k));
+
+      if (allSelected) {
+        unpaidInDay.forEach((k) => next.delete(k));
+      } else {
+        unpaidInDay.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  // Toggle fila completa (Todos los días del mes para un ambulante)
+  const toggleMerchantRow = (merchantId: string) => {
+    const unpaidInMonth = daysArray
+      .map((d) => `${merchantId}-${d}`)
+      .filter((k) => !paymentsMap[k]);
+
+    if (unpaidInMonth.length === 0) return;
+
+    setSelectedGridCells((prev) => {
+      const next = new Set(prev);
+      const allSelected = unpaidInMonth.every((k) => next.has(k));
+
+      if (allSelected) {
+        unpaidInMonth.forEach((k) => next.delete(k));
+      } else {
+        unpaidInMonth.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  // Seleccionar todas las cuadrículas pendientes del mes completo
+  const selectAllPendingGrid = () => {
+    const allPending: string[] = [];
+    filteredMerchants.forEach((m) => {
+      daysArray.forEach((d) => {
+        const key = `${m.id}-${d}`;
+        if (!paymentsMap[key]) allPending.push(key);
+      });
+    });
+    setSelectedGridCells(new Set(allPending));
+  };
+
+  // Seleccionar pendientes hasta el día actual
+  const selectAllPendingUntilToday = () => {
+    const today = new Date().getDate();
+    const allPending: string[] = [];
+    filteredMerchants.forEach((m) => {
+      daysArray.filter((d) => d <= today).forEach((d) => {
+        const key = `${m.id}-${d}`;
+        if (!paymentsMap[key]) allPending.push(key);
+      });
+    });
+    setSelectedGridCells(new Set(allPending));
+  };
+
+  const clearGridSelection = () => {
+    setSelectedGridCells(new Set());
+    setSelectedAmbulanteIds(new Set());
+  };
+
+  // Guardar y consolidar todas las celdas seleccionadas en la cuadrícula
+  const handleConsolidatedSave = async () => {
+    if (selectedGridCells.size === 0) {
+      alert('Por favor haga clic sobre las cuadrículas de los días que desea cobrar para consolidar el monto.');
+      return;
+    }
+
+    const totalCells = selectedGridCells.size;
+    const totalAmount = totalCells * 5.0;
+    const monthName = MONTHS.find((m) => m.val === selectedMonth)?.name || `Mes ${selectedMonth}`;
+
+    const confirmMsg = `¿Desea CONSOLIDAR Y GUARDAR los cobros seleccionados en la cuadrícula?\n\n• Celdas/Días seleccionados: ${totalCells}\n• Monto unitario: S/ 5.00/día\n• Monto Total Consolidado: S/ ${totalAmount.toFixed(2)}\n• Período: ${monthName} ${selectedYear}\n• Medio de Pago: ${bulkPaymentMethod}\n\nLos recibos se generarán de forma oficial en la base de datos.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    try {
+      const items = Array.from(selectedGridCells).map((key) => {
+        const [mId, dayStr] = key.split('-');
+        const day = parseInt(dayStr, 10);
+        const amb = merchantsList.find((m) => m.id === mId);
+        const period = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const notes = `DIA-${day}-${selectedMonth}-${selectedYear} | Alcabala Ambulante Fijo: ${amb?.name || mId}`;
+
+        return {
+          merchantId: mId,
+          conceptCode: 'ALCABALA',
+          amount: 5.0,
+          period,
+          paymentMethod: bulkPaymentMethod,
+          notes,
+        };
+      });
+
+      const res = await apiRequest('/payments/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+      });
+
+      // Actualizar mapa local de pagos
+      const nextMap = { ...paymentsMap };
+      items.forEach((it, idx) => {
+        const day = parseInt(it.period.split('-')[2], 10);
+        const op = res?.payments?.[idx]?.operationNumber || `MB-${Date.now()}`;
+        nextMap[`${it.merchantId}-${day}`] = { amount: 5.0, op };
+      });
+      setPaymentsMap(nextMap);
+      setSelectedGridCells(new Set());
+
+      alert(`✓ ¡Consolidación Exitosa!\nSe guardaron ${items.length} pagos de alcabala diaria en masa por un total de S/ ${totalAmount.toFixed(2)}.`);
+    } catch (err: any) {
+      alert('Error al consolidar pagos: ' + (err.message || 'Error de servidor'));
+    } finally {
+      setIsSavingBulk(false);
+    }
+  };
 
   const toggleSelectAmbulante = (id: string) => {
     setSelectedAmbulanteIds((prev) => {
@@ -747,17 +890,43 @@ export default function AmbulantesFijosPage() {
 
       {/* TAB 1: CUADRÍCULA DE COBRO DIARIO (ALCABALA) */}
       {activeTab === 'CRONOGRAMA' && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          {/* Barra de Cobro y Guardado en Masa de Alcabala (Períodos Pasados y Actuales) */}
-          <div className="p-3 bg-amber-50/80 border-b border-amber-200 flex flex-wrap items-center justify-between gap-3 shadow-inner">
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden space-y-0">
+          {/* Barra de Consolidación y Guardado en Masa de Cuadrículas */}
+          <div className="p-3 bg-gradient-to-r from-amber-100 via-amber-50 to-orange-50 border-b border-amber-300 flex flex-wrap items-center justify-between gap-3 shadow-inner">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-white border border-amber-300 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900 shadow-sm">
-                <span>Día a Cobrar:</span>
+              <span className="text-xs font-black uppercase text-amber-950 flex items-center gap-1.5 mr-1">
+                <Calendar className="w-4 h-4 text-amber-700" />
+                <span>Selección en Cuadrícula:</span>
+              </span>
+
+              <button
+                type="button"
+                onClick={selectAllPendingGrid}
+                className="px-2.5 py-1.5 bg-white hover:bg-amber-200 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                title="Seleccionar todas las casillas pendientes de todos los comerciantes en el mes"
+              >
+                <Check className="w-3.5 h-3.5 text-amber-700" />
+                <span>Todo el Mes</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={selectAllPendingUntilToday}
+                className="px-2.5 py-1.5 bg-white hover:bg-amber-200 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                title="Seleccionar todas las casillas pendientes desde el día 1 hasta hoy"
+              >
+                <span>Hasta Hoy ({new Date().getDate()})</span>
+              </button>
+
+              {/* Selector de día específico para selección rápida por columna */}
+              <div className="flex items-center gap-1 bg-white border border-amber-300 px-2.5 py-1 rounded-xl text-xs font-bold text-amber-950 shadow-sm">
+                <span className="text-[11px] text-amber-800">Día:</span>
                 <select
                   value={selectedDayForBulk}
                   onChange={(e) => {
-                    setSelectedDayForBulk(Number(e.target.value));
-                    setSelectedAmbulanteIds(new Set());
+                    const day = Number(e.target.value);
+                    setSelectedDayForBulk(day);
+                    toggleDayColumn(day);
                   }}
                   className="bg-transparent font-black text-amber-900 outline-none cursor-pointer"
                 >
@@ -767,56 +936,55 @@ export default function AmbulantesFijosPage() {
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => toggleDayColumn(selectedDayForBulk)}
+                  className="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-900 px-1.5 py-0.5 rounded font-bold"
+                >
+                  Sel
+                </button>
               </div>
 
               <button
                 type="button"
-                onClick={selectAllPendingAlcabala}
-                className="px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
+                onClick={clearGridSelection}
+                className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
               >
-                <Check className="w-3.5 h-3.5" />
-                <span>
-                  Seleccionar Pendientes Día {selectedDayForBulk} (
-                  {filteredMerchants.filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount).length})
-                </span>
+                Limpiar
               </button>
-
-              <button
-                type="button"
-                onClick={deselectAllAmbulantes}
-                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
-              >
-                Deseleccionar
-              </button>
-
-              {selectedAmbulanteIds.size > 0 && (
-                <span className="text-xs font-black text-amber-950 bg-amber-200 px-3 py-1 rounded-xl">
-                  {selectedAmbulanteIds.size} seleccionados (S/ {(selectedAmbulanteIds.size * 5).toFixed(2)})
-                </span>
-              )}
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Consolidación de montos seleccionados */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="bg-amber-200 border border-amber-400 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-sm">
+                <span className="text-xs text-amber-950 font-bold">
+                  {selectedGridCells.size} {selectedGridCells.size === 1 ? 'casilla' : 'casillas'}:
+                </span>
+                <span className="text-sm font-black font-mono text-amber-950">
+                  S/ {(selectedGridCells.size * 5.0).toFixed(2)}
+                </span>
+              </div>
+
               <select
                 value={bulkPaymentMethod}
                 onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
-                className="bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-amber-900 outline-none"
+                className="bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-amber-900 outline-none shadow-sm"
               >
                 <option value="EFECTIVO">💵 En Efectivo</option>
-                <option value="YAPE">📱 Yape / Digital</option>
+                <option value="YAPE">📱 Yape / Plin</option>
               </select>
 
               <button
                 type="button"
-                onClick={() => handleBulkSaveAmbulantes('ALCABALA')}
-                disabled={selectedAmbulanteIds.size === 0 || isSavingBulk}
-                className="px-4 py-2 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+                onClick={handleConsolidatedSave}
+                disabled={selectedGridCells.size === 0 || isSavingBulk}
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition"
               >
                 <Save className="w-4 h-4" />
                 <span>
                   {isSavingBulk
                     ? 'Guardando...'
-                    : `Guardar Alcabala Día ${selectedDayForBulk} (${selectedAmbulanteIds.size})`}
+                    : `Consolidar y Guardar (S/ ${(selectedGridCells.size * 5.0).toFixed(2)})`}
                 </span>
               </button>
             </div>
@@ -830,31 +998,50 @@ export default function AmbulantesFijosPage() {
                     <input
                       type="checkbox"
                       checked={
-                        filteredMerchants.filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount).length > 0 &&
-                        filteredMerchants
-                          .filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount)
-                          .every((m) => selectedAmbulanteIds.has(m.id))
+                        selectedGridCells.size > 0 &&
+                        filteredMerchants.every((m) =>
+                          daysArray.every((d) => paymentsMap[`${m.id}-${d}`] || selectedGridCells.has(`${m.id}-${d}`))
+                        )
                       }
                       onChange={(e) => {
-                        if (e.target.checked) selectAllPendingAlcabala();
-                        else deselectAllAmbulantes();
+                        if (e.target.checked) selectAllPendingGrid();
+                        else clearGridSelection();
                       }}
                       className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
-                      title="Seleccionar / Deseleccionar pendientes del día"
+                      title="Seleccionar / Deseleccionar todo el mes en la cuadrícula"
                     />
                   </th>
                   <th className="py-2.5 px-3 border border-slate-200 text-center sticky left-12 bg-slate-100 z-30 w-10">N°</th>
                   <th className="py-2.5 px-3 border border-slate-200 sticky left-22 bg-slate-100 z-30 min-w-[200px]">Apellidos y Nombres</th>
                   <th className="py-2.5 px-2 border border-slate-200 text-center sticky left-[250px] bg-slate-100 z-30 min-w-[90px]">Giro</th>
 
-                  {/* Días 1..31 */}
-                  {daysArray.map((day) => (
-                    <th key={day} className={`py-2.5 px-1 border border-slate-200 text-center min-w-[34px] w-[34px] ${day === selectedDayForBulk ? 'bg-amber-200 text-amber-950 font-black' : ''}`}>
-                      {day}
-                    </th>
-                  ))}
+                  {/* Días 1..31 con encabezados clickeables para selección por columna */}
+                  {daysArray.map((day) => {
+                    const isAllDaySelected =
+                      filteredMerchants.length > 0 &&
+                      filteredMerchants.every(
+                        (m) => paymentsMap[`${m.id}-${day}`] || selectedGridCells.has(`${m.id}-${day}`)
+                      );
 
-                  <th className="py-2.5 px-3 border border-slate-200 text-right min-w-[90px] sticky right-0 bg-slate-100 z-30">
+                    return (
+                      <th
+                        key={day}
+                        onClick={() => toggleDayColumn(day)}
+                        title={`Click para seleccionar/deseleccionar el Día ${day} para todos los comerciantes`}
+                        className={`py-2.5 px-1 border border-slate-200 text-center min-w-[34px] w-[34px] cursor-pointer transition select-none ${
+                          isAllDaySelected
+                            ? 'bg-amber-300 text-amber-950 font-black'
+                            : day === selectedDayForBulk
+                            ? 'bg-amber-100 text-amber-900 font-bold'
+                            : 'hover:bg-amber-100 text-slate-700'
+                        }`}
+                      >
+                        {day}
+                      </th>
+                    );
+                  })}
+
+                  <th className="py-2.5 px-3 border border-slate-200 text-right min-w-[110px] sticky right-0 bg-slate-100 z-30">
                     Total S/
                   </th>
                 </tr>
@@ -862,16 +1049,22 @@ export default function AmbulantesFijosPage() {
 
               <tbody className="divide-y divide-slate-100">
                 {filteredMerchants.map((merchant, index) => {
-                  let merchantTotal = 0;
+                  let merchantPaidTotal = 0;
+                  let merchantSelectedTotal = 0;
+
+                  const isRowAllSelected = daysArray.every(
+                    (d) => paymentsMap[`${merchant.id}-${d}`] || selectedGridCells.has(`${merchant.id}-${d}`)
+                  );
 
                   return (
                     <tr key={merchant.id} className="hover:bg-amber-50/40 transition">
                       <td className="py-2 px-3 border border-slate-200 text-center sticky left-0 bg-white z-10">
                         <input
                           type="checkbox"
-                          checked={selectedAmbulanteIds.has(merchant.id)}
-                          onChange={() => toggleSelectAmbulante(merchant.id)}
+                          checked={isRowAllSelected}
+                          onChange={() => toggleMerchantRow(merchant.id)}
                           className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                          title="Click para seleccionar/deseleccionar todos los días de este comerciante"
                         />
                       </td>
                       <td className="py-2 px-3 border border-slate-200 text-center font-bold text-slate-500 sticky left-12 bg-white z-10">
@@ -889,31 +1082,52 @@ export default function AmbulantesFijosPage() {
                         </span>
                       </td>
 
-                      {/* Casilleros de días 1..31 */}
+                      {/* Casilleros interactivos de días 1..31 */}
                       {daysArray.map((day) => {
                         const key = `${merchant.id}-${day}`;
                         const pay = paymentsMap[key];
                         const isPaid = !!pay;
-                        if (isPaid) merchantTotal += pay.amount;
+                        const isSelected = selectedGridCells.has(key);
+                        if (isPaid) merchantPaidTotal += pay.amount;
+                        if (isSelected) merchantSelectedTotal += 5.0;
 
                         return (
                           <td
                             key={day}
-                            onClick={() => handleCellClick(merchant, day)}
-                            title={isPaid ? `Pagado S/ ${pay.amount.toFixed(2)} - Click para reimprimir recibo` : `Click para cobrar Día ${day} (S/ 5.00)`}
+                            onClick={() => {
+                              if (isPaid) {
+                                handleCellClick(merchant, day);
+                              } else {
+                                toggleGridCell(merchant.id, day);
+                              }
+                            }}
+                            title={
+                              isPaid
+                                ? `Pagado S/ ${pay.amount.toFixed(2)} (${pay.op || 'Recibo'}) - Click para reimprimir`
+                                : isSelected
+                                ? `Día ${day} Seleccionado (S/ 5.00) - Click para desmarcar`
+                                : `Click para seleccionar cuadrícula Día ${day} (S/ 5.00)`
+                            }
                             className={`py-2 px-1 border border-slate-200 text-center font-bold font-mono text-[11px] cursor-pointer transition select-none ${
                               isPaid
                                 ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                : isSelected
+                                ? 'bg-amber-400 text-amber-950 font-black ring-2 ring-inset ring-amber-600 shadow-sm'
                                 : 'hover:bg-amber-100 text-slate-300'
                             }`}
                           >
-                            {isPaid ? '5' : '·'}
+                            {isPaid ? '5' : isSelected ? '✓ 5' : '·'}
                           </td>
                         );
                       })}
 
-                      <td className="py-2 px-3 border border-slate-200 text-right font-black font-mono text-emerald-800 sticky right-0 bg-white z-10">
-                        S/ {merchantTotal.toFixed(2)}
+                      <td className="py-2 px-3 border border-slate-200 text-right font-mono sticky right-0 bg-white z-10">
+                        <div className="font-black text-emerald-800">S/ {merchantPaidTotal.toFixed(2)}</div>
+                        {merchantSelectedTotal > 0 && (
+                          <div className="text-[10px] font-black text-amber-800 bg-amber-100 px-1 py-0.2 rounded border border-amber-300 inline-block mt-0.5 shadow-sm">
+                            +S/ {merchantSelectedTotal.toFixed(2)}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

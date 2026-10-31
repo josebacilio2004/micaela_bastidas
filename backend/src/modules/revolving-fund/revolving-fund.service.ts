@@ -46,6 +46,25 @@ export class RevolvingFundService {
     notes?: string;
     createdById?: string;
   }) {
+    // Verificación estricta: Únicamente los SOCIOS del mercado tienen acceso a créditos
+    if (data.merchantId) {
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { id: data.merchantId },
+        include: { merchantType: true },
+      });
+      if (merchant && merchant.merchantType && merchant.merchantType.code !== 'SOCIO') {
+        throw new BadRequestException('Acceso Restringido: Únicamente los socios titulares empadronados de la asociación tienen acceso a solicitar préstamos del Fondo Rotatorio.');
+      }
+    } else if (data.borrowerDni) {
+      const merchant = await this.prisma.merchant.findUnique({
+        where: { dni: data.borrowerDni },
+        include: { merchantType: true },
+      });
+      if (merchant && merchant.merchantType && merchant.merchantType.code !== 'SOCIO') {
+        throw new BadRequestException('Acceso Restringido: Únicamente los socios titulares empadronados de la asociación tienen acceso a solicitar préstamos del Fondo Rotatorio.');
+      }
+    }
+
     const count = await this.prisma.loan.count();
     const orderNumber = 'FR-PREST-' + String(count + 1).padStart(4, '0');
 
@@ -331,6 +350,109 @@ export class RevolvingFundService {
         'NOVENO: No Existe El Abono A Capital Ni Interés, Todo Calculo De Interés Sera Al Monto Del Capital Prestado Independientemente De Pagar Saldos A Favor Del Capital , De Cancelar El Capital , Se Aplicara El Recalculo De Interés Al Interés Faltante De Pago . El Beneficiario No Tendrá Lugar A Reclamos Dadas La Condiciones Del Préstamo.',
       ],
     };
+  }
+
+  async extendLoanTerm(
+    id: string,
+    data: {
+      additionalMonths?: number;
+      additionalDays?: number;
+      extensionReason?: string;
+      additionalInterest?: number;
+      userId?: string;
+    },
+  ) {
+    const loan = await this.findLoanById(id);
+    const addMonths = Number(data.additionalMonths || 0);
+    const addDays = Number(data.additionalDays || 15);
+    const newTermMonths = Number(loan.termMonths) + addMonths;
+
+    // Recalcular monto total si aplica interés adicional
+    const addInterest = Number(data.additionalInterest || 0);
+    const newTotalAmount = Number((Number(loan.totalAmount) + addInterest).toFixed(2));
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const extensionNote = `\n[EXTENSIÓN DE CRÉDITO ${todayStr}]: Prórroga de +${addMonths > 0 ? `${addMonths} mes(es)` : ''} ${addDays > 0 ? `${addDays} días` : ''} concedida. Motivo: ${data.extensionReason || 'Prórroga por plazo vencido'}. Interés adicional: S/ ${addInterest.toFixed(2)}.`;
+    const updatedNotes = (loan.notes ? loan.notes + ' ' : '') + extensionNote;
+
+    return this.prisma.loan.update({
+      where: { id },
+      data: {
+        termMonths: newTermMonths,
+        totalAmount: newTotalAmount,
+        status: 'PRORROGADO',
+        notes: updatedNotes,
+      },
+      include: {
+        merchant: true,
+        collections: true,
+      },
+    });
+  }
+
+  async generateDocx(id: string): Promise<{ buffer: Buffer; filename: string }> {
+    const contract = await this.getLoanContract(id);
+    const fs = await import('fs');
+    const path = await import('path');
+    const JSZip = (await import('jszip')).default;
+
+    const candidatePaths = [
+      path.resolve(process.cwd(), 'assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
+      path.resolve(process.cwd(), '../assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
+      path.resolve(process.cwd(), 'backend/assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
+      path.resolve(__dirname, '../../../assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx'),
+      'D:/jose/micaela_bastidas/assets/PRESTAMO N° 001-FR2026 - ESTEBAN LLACSA CLEMENCIA.docx',
+    ];
+
+    let templatePath = '';
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        templatePath = p;
+        break;
+      }
+    }
+
+    if (!templatePath) {
+      throw new NotFoundException('Plantilla Word del Fondo Rotatorio no encontrada en el servidor.');
+    }
+
+    const templateData = fs.readFileSync(templatePath);
+    const zip = await JSZip.loadAsync(templateData);
+    let docXml = await zip.file('word/document.xml')!.async('string');
+
+    const borrowerFullName = `${contract.borrower.lastName} ${contract.borrower.firstName}`.toUpperCase();
+    const dni = contract.borrower.dni || '';
+    const address = contract.borrower.address || 'JR. SANTOS ATAHUALPA N° 949 SECTOR N° 8 J.P.V. EL TAMBO';
+    const amountStr = contract.loanDetails.principalAmount;
+    const totalToPayStr = contract.loanDetails.totalAmountToPay;
+    const totalInterestStr = contract.loanDetails.totalInterest;
+    const monthlyInterestStr = contract.loanDetails.monthlyInterestAmount;
+    const monthlyTotalStr = contract.loanDetails.monthlyQuota;
+    const amountWords = contract.loanDetails.principalInWords;
+
+    docXml = docXml
+      .replace(/ESTEBAN\s+LLACSA\s+CLEMENCIA/g, borrowerFullName)
+      .replace(/ESTEBAN\s+LLACSA/g, contract.borrower.lastName.toUpperCase())
+      .replace(/CLEMENCIA/g, contract.borrower.firstName.toUpperCase())
+      .replace(/19\s*836345/g, dni)
+      .replace(/JR\.\s*HIP[ÓO]LITO\s*UNANUE\s*N[°º]\s*297\s*,\s*SECTOR\s*4\s*J\.P\.V\s*\.\s*EL\s*TAMBO/gi, address)
+      .replace(/2\s*,\s*000\.00/g, amountStr)
+      .replace(/2\s*,\s*120\s*\.\s*00/g, totalToPayStr)
+      .replace(/1\s*,\s*060\s*\.\s*00/g, monthlyTotalStr)
+      .replace(/6\s*0\.00/g, monthlyInterestStr)
+      .replace(/12\s*0\s*\.\s*00/g, totalInterestStr)
+      .replace(/Mil\s+y\s+00\/100\s+Soles/gi, `${amountWords} Soles`)
+      .replace(/PRESTAMO\s+N[°º]\s+1/gi, `PRESTAMO N° ${contract.orderNumber.replace(/[^0-9]/g, '') || '001'}`)
+      .replace(/5\s+de\s+MARZO\s+del\s+202\s*6/gi, contract.loanDetails.startDateFormatted)
+      .replace(/5\s*\/03\/202\s*6/g, contract.loanDetails.startDateSlash)
+      .replace(/5\s*\/04\/202\s*6/g, contract.loanDetails.firstDueDateSlash)
+      .replace(/5\s*\/05\/202\s*6/g, contract.loanDetails.endDateSlash);
+
+    zip.file('word/document.xml', docXml);
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const filename = `CONTRATO-${contract.orderNumber}-${contract.borrower.lastName.replace(/\s+/g, '_')}.docx`;
+
+    return { buffer, filename };
   }
 }
 

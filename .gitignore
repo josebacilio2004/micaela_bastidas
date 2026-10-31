@@ -69,6 +69,9 @@ Thumbs.db
 *.ods
 *.docx
 *.doc
+# Plantillas oficiales de contratos autorizadas
+!assets/*.docx
+!backend/assets/*.docx
 FORMATOS*.xlsx
 *COBRO*.xlsx
 *socios*.xlsx

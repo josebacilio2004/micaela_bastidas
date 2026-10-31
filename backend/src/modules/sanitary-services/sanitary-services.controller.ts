@@ -28,8 +28,20 @@ export class SanitaryServicesController {
 
   @Get('history')
   @ApiOperation({ summary: 'Historial de turnos de servicios higiénicos' })
-  getHistory() {
-    return this.sanitaryService.getHistory();
+  getHistory(@Query('year') year?: string, @Query('month') month?: string) {
+    const y = year ? parseInt(year, 10) : undefined;
+    const m = month ? parseInt(month, 10) : undefined;
+    return this.sanitaryService.getHistory(y, m);
+  }
+
+  @Post('bulk-historical')
+  @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA, RoleType.SERVICIOS_HIGIENICOS)
+  @ApiOperation({ summary: 'Carga masiva de sesiones y turnos históricos de SSHH' })
+  bulkHistorical(
+    @Body() body: { items: any[] },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.sanitaryService.bulkHistoricalSessions(body.items, userId);
   }
 
   @Post('start')
