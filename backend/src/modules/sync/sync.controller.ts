@@ -32,4 +32,19 @@ export class SyncController {
   getStatus() {
     return this.syncService.getSyncStatus();
   }
+
+  @Get('export-package')
+  @ApiOperation({ summary: 'Exportar paquete integral de datos contables para migración' })
+  exportPackage() {
+    return this.syncService.exportAccountingPackage();
+  }
+
+  @Post('import-package')
+  @ApiOperation({ summary: 'Importar y fusionar paquete contable de la laptop de la contadora' })
+  importPackage(
+    @Body() pkg: any,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.syncService.importAccountingPackage(pkg, userId);
+  }
 }
