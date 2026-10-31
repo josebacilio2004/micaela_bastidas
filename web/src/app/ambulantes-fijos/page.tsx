@@ -456,7 +456,9 @@ export default function AmbulantesFijosPage() {
     setIsSavingBulk(true);
     try {
       const items = Array.from(selectedGridCells).map((key) => {
-        const [mId, dayStr] = key.split('-');
+        const lastDash = key.lastIndexOf('-');
+        const mId = key.substring(0, lastDash);
+        const dayStr = key.substring(lastDash + 1);
         const day = parseInt(dayStr, 10);
         const amb = merchantsList.find((m) => m.id === mId);
         const period = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -486,6 +488,7 @@ export default function AmbulantesFijosPage() {
       });
       setPaymentsMap(nextMap);
       setSelectedGridCells(new Set());
+      await loadData();
 
       alert(`✓ ¡Consolidación Exitosa!\nSe guardaron ${items.length} pagos de alcabala diaria en masa por un total de S/ ${totalAmount.toFixed(2)}.`);
     } catch (err: any) {
