@@ -417,8 +417,23 @@ export class CashflowService {
       });
     }
 
-    const count = await this.prisma.payment.count();
-    const opNumber = `ING-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(count + 1).padStart(5, '0')}`;
+    const ingPrefix = `ING-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-`;
+    const lastIng = await this.prisma.payment.findFirst({
+      where: { operationNumber: { startsWith: ingPrefix } },
+      orderBy: { operationNumber: 'desc' },
+      select: { operationNumber: true },
+    });
+    let ingSeq = 1;
+    if (lastIng && lastIng.operationNumber) {
+      const parts = lastIng.operationNumber.split('-');
+      const s = parseInt(parts[2], 10);
+      if (!isNaN(s) && s >= ingSeq) ingSeq = s + 1;
+    }
+    let opNumber = `${ingPrefix}${String(ingSeq).padStart(5, '0')}`;
+    while (await this.prisma.payment.findUnique({ where: { operationNumber: opNumber }, select: { id: true } })) {
+      ingSeq++;
+      opNumber = `${ingPrefix}${String(ingSeq).padStart(5, '0')}`;
+    }
 
     // 2. Vincular a caja activa si existe
     let cashRegisterId: string | null = null;

@@ -1,7 +1,7 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { formatOperationNumber } from '../../common/utils/code-generator.util';
+import { formatOperationNumber, getDatePrefix } from '../../common/utils/code-generator.util';
 import { CashRegisterStatus, ObligationStatus, AuditAction, PaymentMethod } from '@prisma/client';
 
 @Injectable()
@@ -140,18 +140,34 @@ export class PaymentsService {
     // 4. Atomic transaction with sequential receipt numbering MB-YYYYMMDD-XXXXX
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      const startOfDay = new Date(now);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(now);
-      endOfDay.setHours(23, 59, 59, 999);
+      const prefix = getDatePrefix(now);
 
-      const paymentsToday = await tx.payment.count({
+      const lastPaymentToday = await tx.payment.findFirst({
         where: {
-          paidAt: { gte: startOfDay, lte: endOfDay },
+          operationNumber: { startsWith: prefix },
+        },
+        orderBy: {
+          operationNumber: 'desc',
+        },
+        select: {
+          operationNumber: true,
         },
       });
 
-      const operationNumber = formatOperationNumber(now, paymentsToday + 1);
+      let nextSeq = 1;
+      if (lastPaymentToday && lastPaymentToday.operationNumber) {
+        const parts = lastPaymentToday.operationNumber.split('-');
+        const seqNum = parseInt(parts[2], 10);
+        if (!isNaN(seqNum) && seqNum >= nextSeq) {
+          nextSeq = seqNum + 1;
+        }
+      }
+
+      let operationNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+      while (await tx.payment.findUnique({ where: { operationNumber }, select: { id: true } })) {
+        nextSeq++;
+        operationNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+      }
 
       const payment = await tx.payment.create({
         data: {
@@ -287,16 +303,28 @@ export class PaymentsService {
 
     await this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      const startOfDay = new Date(now);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(now);
-      endOfDay.setHours(23, 59, 59, 999);
+      const prefix = getDatePrefix(now);
 
-      let paymentsToday = await tx.payment.count({
+      const lastPaymentToday = await tx.payment.findFirst({
         where: {
-          paidAt: { gte: startOfDay, lte: endOfDay },
+          operationNumber: { startsWith: prefix },
+        },
+        orderBy: {
+          operationNumber: 'desc',
+        },
+        select: {
+          operationNumber: true,
         },
       });
+
+      let nextSeq = 1;
+      if (lastPaymentToday && lastPaymentToday.operationNumber) {
+        const parts = lastPaymentToday.operationNumber.split('-');
+        const seqNum = parseInt(parts[2], 10);
+        if (!isNaN(seqNum) && seqNum >= nextSeq) {
+          nextSeq = seqNum + 1;
+        }
+      }
 
       for (const item of items) {
         let resolvedConceptId = item.conceptId;
@@ -350,8 +378,15 @@ export class PaymentsService {
           }
         }
 
-        paymentsToday++;
-        const operationNumber = formatOperationNumber(now, paymentsToday);
+        let operationNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+        nextSeq++;
+
+        // Garantizar unicidad absoluta - colisión imposible
+        while (await tx.payment.findUnique({ where: { operationNumber }, select: { id: true } })) {
+          operationNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+          nextSeq++;
+        }
+
         const paidAtDate = item.paidAt ? new Date(item.paidAt) : now;
 
         const payment = await tx.payment.create({

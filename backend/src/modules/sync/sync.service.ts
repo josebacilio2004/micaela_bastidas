@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { formatOperationNumber } from '../../common/utils/code-generator.util';
+import { formatOperationNumber, getDatePrefix } from '../../common/utils/code-generator.util';
 import { AuditAction } from '@prisma/client';
 
 export interface SyncPushOperation {
@@ -65,15 +65,28 @@ export class SyncService {
             });
           } else {
             const now = new Date();
-            const startOfDay = new Date(now);
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date(now);
-            endOfDay.setHours(23, 59, 59, 999);
+            const prefix = getDatePrefix(now);
 
-            const countToday = await this.prisma.payment.count({
-              where: { paidAt: { gte: startOfDay, lte: endOfDay } },
+            const lastPaymentToday = await this.prisma.payment.findFirst({
+              where: { operationNumber: { startsWith: prefix } },
+              orderBy: { operationNumber: 'desc' },
+              select: { operationNumber: true },
             });
-            const operationNumber = formatOperationNumber(now, countToday + 1);
+
+            let nextSeq = 1;
+            if (lastPaymentToday && lastPaymentToday.operationNumber) {
+              const parts = lastPaymentToday.operationNumber.split('-');
+              const seqNum = parseInt(parts[2], 10);
+              if (!isNaN(seqNum) && seqNum >= nextSeq) {
+                nextSeq = seqNum + 1;
+              }
+            }
+
+            let operationNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+            while (await this.prisma.payment.findUnique({ where: { operationNumber }, select: { id: true } })) {
+              nextSeq++;
+              operationNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+            }
 
             // Active cash register
             const cashRegister = await this.prisma.cashRegister.findFirst({

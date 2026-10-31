@@ -28,6 +28,7 @@ import {
   Check,
   Save,
   Filter,
+  RotateCcw,
 } from 'lucide-react';
 
 interface OfficialTenant {
@@ -137,11 +138,11 @@ export default function AlquileresPage() {
   const [isSavingBulk, setIsSavingBulk] = useState(false);
 
   // Filtros Generales de Fechas y Períodos para Alquileres
-  const [filterYear, setFilterYear] = useState<string>('2026');
+  const [filterYear, setFilterYear] = useState<string>('ALL');
   const [filterPeriodMonth, setFilterPeriodMonth] = useState<string>('ALL');
   const [dateRangeFrom, setDateRangeFrom] = useState<string>('');
   const [dateRangeTo, setDateRangeTo] = useState<string>('');
-  const [scheduleStatusFilter, setScheduleStatusFilter] = useState<'ALL' | 'WITH_PENDING' | 'UP_TO_DATE' | 'FINALIZED'>('ALL');
+  const [scheduleStatusFilter, setScheduleStatusFilter] = useState<'ALL' | 'ACTIVE' | 'WITH_PENDING' | 'UP_TO_DATE' | 'FINALIZED'>('ALL');
   const [viewMode, setViewMode] = useState<'PADRON' | 'CUADRICULA'>('PADRON');
 
   // Combined Contract List: DB Contracts + Official fallback
@@ -212,9 +213,10 @@ export default function AlquileresPage() {
       // 5. Filtro de Estado de Cuotas
       const instList = c.installments || c.schedule || [];
       const pendingCount = instList.filter((i: any) => i.status !== 'PAGADO').length;
+      if (scheduleStatusFilter === 'ACTIVE' && c.status !== 'ACTIVO') return false;
       if (scheduleStatusFilter === 'WITH_PENDING' && pendingCount === 0) return false;
       if (scheduleStatusFilter === 'UP_TO_DATE' && pendingCount > 0) return false;
-      if (scheduleStatusFilter === 'FINALIZED' && c.status !== 'FINALIZADO' && pendingCount > 0) return false;
+      if (scheduleStatusFilter === 'FINALIZED' && c.status !== 'FINALIZADO') return false;
 
       return true;
     });
@@ -1124,14 +1126,35 @@ export default function AlquileresPage() {
           {/* BARRA DE FILTROS GENERALES DE FECHAS, PERIODOS Y CRONOGRAMA */}
           <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-emerald-600" />
-                <h3 className="text-xs font-black uppercase text-slate-800 tracking-tight">
-                  Filtros Generales de Períodos y Fechas de Contratos
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  {filteredContracts.length} de {displayContracts.length} Contratos
-                </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-4 h-4 text-emerald-600" />
+                  <h3 className="text-xs font-black uppercase text-slate-800 tracking-tight">
+                    Filtros Generales de Períodos y Fechas de Contratos
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    {filteredContracts.length} de {displayContracts.length} Contratos
+                  </span>
+                </div>
+
+                {(search || filterYear !== 'ALL' || filterPeriodMonth !== 'ALL' || dateRangeFrom || dateRangeTo || scheduleStatusFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setFilterYear('ALL');
+                      setFilterPeriodMonth('ALL');
+                      setDateRangeFrom('');
+                      setDateRangeTo('');
+                      setScheduleStatusFilter('ALL');
+                    }}
+                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                    title="Restablecer todos los filtros y mostrar todos los contratos"
+                  >
+                    <RotateCcw className="w-3 h-3 text-rose-600" />
+                    <span>Restablecer Filtros</span>
+                  </button>
+                )}
               </div>
 
               {/* Selector de Modo de Vista */}
@@ -1230,10 +1253,11 @@ export default function AlquileresPage() {
                   onChange={(e) => setScheduleStatusFilter(e.target.value as any)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
                 >
-                  <option value="ALL">Todos los Estados</option>
-                  <option value="WITH_PENDING">Con Cuotas Pendientes</option>
+                  <option value="ALL">Todos los Estados (8 Inquilinos)</option>
+                  <option value="ACTIVE">Contratos Activos / Vigentes (8)</option>
+                  <option value="WITH_PENDING">Con Cuotas Pendientes de Pago</option>
                   <option value="UP_TO_DATE">Al Día (Sin Morosidad)</option>
-                  <option value="FINALIZED">Contratos Finalizados</option>
+                  <option value="FINALIZED">Contratos Finalizados / Concluidos</option>
                 </select>
               </div>
             </div>
@@ -1361,7 +1385,37 @@ export default function AlquileresPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredContracts.map((c: any) => {
+                    {filteredContracts.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-10 text-center bg-slate-50/50">
+                          <div className="max-w-md mx-auto space-y-2.5">
+                            <Building className="w-9 h-9 text-slate-300 mx-auto" />
+                            <p className="text-sm font-bold text-slate-700">No hay contratos que coincidan con los filtros seleccionados</p>
+                            <p className="text-xs text-slate-400">
+                              {scheduleStatusFilter === 'FINALIZED'
+                                ? "Actualmente no existen contratos finalizados. Los 8 inquilinos tienen contratos activos con cuotas vigentes."
+                                : "No se encontraron inquilinos con el filtro actual."}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearch('');
+                                setFilterYear('ALL');
+                                setFilterPeriodMonth('ALL');
+                                setDateRangeFrom('');
+                                setDateRangeTo('');
+                                setScheduleStatusFilter('ALL');
+                              }}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow transition inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Restablecer Filtros y Ver Todos los Inquilinos (8)</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredContracts.map((c: any) => {
                       const instList = c.installments || c.schedule || [];
                       const totalPaid = instList.filter((i: any) => i.status === 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
                       const totalDebt = instList.filter((i: any) => i.status !== 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
@@ -1477,7 +1531,7 @@ export default function AlquileresPage() {
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                   </tbody>
                 </table>
               </div>
@@ -1616,7 +1670,37 @@ export default function AlquileresPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredContracts.map((c: any, idx: number) => {
+                    {filteredContracts.length === 0 ? (
+                      <tr>
+                        <td colSpan={13} className="p-10 text-center bg-slate-50/50">
+                          <div className="max-w-md mx-auto space-y-2.5">
+                            <Calendar className="w-9 h-9 text-slate-300 mx-auto" />
+                            <p className="text-sm font-bold text-slate-700">No hay contratos para mostrar en la cuadrícula</p>
+                            <p className="text-xs text-slate-400">
+                              {scheduleStatusFilter === 'FINALIZED'
+                                ? "Actualmente no existen contratos finalizados. Los 8 inquilinos tienen contratos activos con cuotas vigentes."
+                                : "No se encontraron inquilinos con el filtro actual."}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearch('');
+                                setFilterYear('ALL');
+                                setFilterPeriodMonth('ALL');
+                                setDateRangeFrom('');
+                                setDateRangeTo('');
+                                setScheduleStatusFilter('ALL');
+                              }}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow transition inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Restablecer Filtros y Ver Todos los Inquilinos (8)</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredContracts.map((c: any, idx: number) => {
                       const instList = c.installments || c.schedule || [];
                       const totalPaid = instList.filter((i: any) => i.status === 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
                       const totalDebt = instList.filter((i: any) => i.status !== 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
@@ -1693,7 +1777,7 @@ export default function AlquileresPage() {
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                   </tbody>
                 </table>
               </div>
