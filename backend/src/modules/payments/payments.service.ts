@@ -248,4 +248,119 @@ export class PaymentsService {
       return updated;
     });
   }
+
+  async createBulk(
+    items: Array<{
+      merchantId: string;
+      conceptId?: string;
+      conceptCode?: string;
+      obligationId?: string;
+      amount: number;
+      period: string;
+      paymentMethod?: PaymentMethod;
+      notes?: string;
+      paidAt?: string;
+    }>,
+    userId: string,
+  ) {
+    if (!items || items.length === 0) {
+      return { count: 0, payments: [] };
+    }
+
+    const conceptCache = new Map<string, any>();
+    const allConcepts = await this.prisma.paymentConcept.findMany();
+    for (const c of allConcepts) {
+      conceptCache.set(c.id, c);
+      conceptCache.set(c.code, c);
+    }
+
+    let registerId: string | null = null;
+    const activeRegister = await this.prisma.cashRegister.findFirst({
+      where: { status: CashRegisterStatus.ABIERTO },
+      orderBy: { openedAt: 'desc' },
+    });
+    if (activeRegister) {
+      registerId = activeRegister.id;
+    }
+
+    const createdPayments: any[] = [];
+
+    await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      let paymentsToday = await tx.payment.count({
+        where: {
+          paidAt: { gte: startOfDay, lte: endOfDay },
+        },
+      });
+
+      for (const item of items) {
+        let resolvedConceptId = item.conceptId;
+        if (!resolvedConceptId && item.conceptCode) {
+          const found = conceptCache.get(item.conceptCode);
+          if (found) resolvedConceptId = found.id;
+        }
+        if (!resolvedConceptId) {
+          resolvedConceptId = allConcepts[0]?.id;
+        }
+
+        if (item.merchantId && resolvedConceptId && item.period) {
+          const existing = await tx.payment.findFirst({
+            where: {
+              merchantId: item.merchantId,
+              conceptId: resolvedConceptId,
+              period: item.period,
+              isVoided: false,
+            },
+          });
+          if (existing) {
+            createdPayments.push(existing);
+            continue;
+          }
+        }
+
+        paymentsToday++;
+        const operationNumber = formatOperationNumber(now, paymentsToday);
+        const paidAtDate = item.paidAt ? new Date(item.paidAt) : now;
+
+        const payment = await tx.payment.create({
+          data: {
+            operationNumber,
+            merchantId: item.merchantId,
+            conceptId: resolvedConceptId!,
+            obligationId: item.obligationId,
+            amount: Number(item.amount),
+            period: item.period,
+            paymentMethod: item.paymentMethod || PaymentMethod.EFECTIVO,
+            cashRegisterId: registerId,
+            collectedById: userId,
+            notes: item.notes,
+            paidAt: paidAtDate,
+          },
+          include: {
+            merchant: { include: { stall: true, merchantType: true } },
+            concept: true,
+          },
+        });
+
+        if (item.obligationId) {
+          await tx.paymentObligation.update({
+            where: { id: item.obligationId },
+            data: {
+              status: ObligationStatus.PAGADO,
+              paidAt: paidAtDate,
+            },
+          });
+        }
+
+        createdPayments.push(payment);
+      }
+    });
+
+    return { count: createdPayments.length, payments: createdPayments };
+  }
 }

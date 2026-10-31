@@ -47,6 +47,16 @@ export class PaymentsController {
     return this.paymentsService.create(dto, userId, idempotencyKey);
   }
 
+  @Post('bulk')
+  @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
+  @ApiOperation({ summary: 'Registrar pagos en masa o lote para períodos pasados o actuales' })
+  createBulk(
+    @Body() body: { items: any[] },
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.paymentsService.createBulk(body.items || [], userId);
+  }
+
   @Post(':id/void')
   @Roles(RoleType.ADMINISTRADOR, RoleType.TESORERA)
   @ApiOperation({ summary: 'Anular un pago registrado con justificación obligatoria' })

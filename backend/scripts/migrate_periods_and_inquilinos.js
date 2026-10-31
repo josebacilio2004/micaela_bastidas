@@ -435,6 +435,58 @@ async function main() {
     }
   }
 
+  // Garantizar que CUALQUIER pago u obligación residual con prefijo antiguo (FALTA-xxxx, FAENA-xxxx, TARD-xxxx) tenga fecha y mes exacto
+  const rawObs = await prisma.paymentObligation.findMany({
+    where: {
+      OR: [
+        { period: { startsWith: 'FALTA-' } },
+        { period: { startsWith: 'FAENA-' } },
+        { period: { startsWith: 'TARD-' } },
+      ],
+    },
+  });
+  for (const ob of rawObs) {
+    const prefix = ob.period.startsWith('FALTA-') ? 'FALTA' : ob.period.startsWith('FAENA-') ? 'FAENA' : 'TARD';
+    const shortId = ob.period.replace(/^(FALTA-|FAENA-|TARD-)/, '');
+    // Buscar si corresponde a una reunión o faena por shortId
+    const matchingMeeting = meetings.find((m) => m.id.startsWith(shortId));
+    const matchingFaena = faenas.find((f) => f.id.startsWith(shortId));
+    const eventDate = matchingMeeting?.date || matchingFaena?.date || ob.dueDate || ob.createdAt;
+    const formatted = formatPeriodDate(eventDate, shortId, prefix);
+    await prisma.paymentObligation.update({
+      where: { id: ob.id },
+      data: { period: formatted },
+    });
+    await prisma.payment.updateMany({
+      where: { obligationId: ob.id },
+      data: { period: formatted },
+    });
+    console.log(`Obligación residual corregida: ${ob.period} -> ${formatted}`);
+  }
+
+  const rawPayments = await prisma.payment.findMany({
+    where: {
+      OR: [
+        { period: { startsWith: 'FALTA-' } },
+        { period: { startsWith: 'FAENA-' } },
+        { period: { startsWith: 'TARD-' } },
+      ],
+    },
+  });
+  for (const pay of rawPayments) {
+    const prefix = pay.period.startsWith('FALTA-') ? 'FALTA' : pay.period.startsWith('FAENA-') ? 'FAENA' : 'TARD';
+    const shortId = pay.period.replace(/^(FALTA-|FAENA-|TARD-)/, '');
+    const matchingMeeting = meetings.find((m) => m.id.startsWith(shortId));
+    const matchingFaena = faenas.find((f) => f.id.startsWith(shortId));
+    const eventDate = matchingMeeting?.date || matchingFaena?.date || pay.paidAt || pay.createdAt;
+    const formatted = formatPeriodDate(eventDate, shortId, prefix);
+    await prisma.payment.update({
+      where: { id: pay.id },
+      data: { period: formatted },
+    });
+    console.log(`Pago residual corregido: ${pay.period} (${pay.operationNumber}) -> ${formatted}`);
+  }
+
   // Resumen final
   const [totalSocios, totalInq, totalAf, totalContracts] = await Promise.all([
     prisma.merchant.count({ where: { merchantType: { code: 'SOCIO' } } }),

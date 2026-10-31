@@ -20,6 +20,8 @@ import {
   Trash2,
   UserCheck,
   RotateCcw,
+  Save,
+  Check,
 } from 'lucide-react';
 
 interface AmbulanteFijo {
@@ -341,6 +343,111 @@ export default function AmbulantesFijosPage() {
     });
   }, [merchantsList, selectedCategory, search]);
 
+  // Mass Selection & Bulk Save State (Períodos Pasados y Actuales)
+  const [selectedDayForBulk, setSelectedDayForBulk] = useState<number>(() => {
+    const d = new Date().getDate();
+    return d > 0 && d <= 31 ? d : 1;
+  });
+  const [selectedAmbulanteIds, setSelectedAmbulanteIds] = useState<Set<string>>(new Set());
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'EFECTIVO' | 'YAPE'>('EFECTIVO');
+  const [isSavingBulk, setIsSavingBulk] = useState(false);
+
+  const toggleSelectAmbulante = (id: string) => {
+    setSelectedAmbulanteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllPendingAlcabala = () => {
+    const pending = filteredMerchants
+      .filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount)
+      .map((m) => m.id);
+    setSelectedAmbulanteIds(new Set(pending));
+  };
+
+  const selectAllPendingWater = () => {
+    const pending = filteredMerchants
+      .filter((m) => !waterPaymentsMap[m.id]?.paid)
+      .map((m) => m.id);
+    setSelectedAmbulanteIds(new Set(pending));
+  };
+
+  const deselectAllAmbulantes = () => {
+    setSelectedAmbulanteIds(new Set());
+  };
+
+  const handleBulkSaveAmbulantes = async (type: 'ALCABALA' | 'AGUA') => {
+    if (selectedAmbulanteIds.size === 0) {
+      alert('Por favor seleccione al menos un ambulante para registrar cobros en masa.');
+      return;
+    }
+
+    const count = selectedAmbulanteIds.size;
+    const fee = type === 'ALCABALA' ? 5.0 : 4.0;
+    const totalAmount = count * fee;
+    const periodStr = type === 'ALCABALA'
+      ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(selectedDayForBulk).padStart(2, '0')}`
+      : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    const conceptLabel = type === 'ALCABALA' ? `Alcabala Diaria (Día ${selectedDayForBulk})` : 'Cuota Mensual de Agua';
+
+    const confirmMsg = `¿Desea GUARDAR Y REGISTRAR los cobros en masa para Ambulantes Fijos?\n\n• Concepto: ${conceptLabel}\n• Período: ${periodStr}\n• Ambulantes seleccionados: ${count}\n• Monto unitario: S/ ${fee.toFixed(2)}\n• Monto total: S/ ${totalAmount.toFixed(2)}\n• Medio de Pago: ${bulkPaymentMethod}\n\nLos registros se guardarán en la base de datos oficial.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    try {
+      const items = Array.from(selectedAmbulanteIds).map((mId) => {
+        const amb = merchantsList.find((m) => m.id === mId);
+        const notes = type === 'ALCABALA'
+          ? `DIA-${selectedDayForBulk}-${selectedMonth}-${selectedYear} | Alcabala Ambulante Fijo: ${amb?.name || mId}`
+          : `AGUA | Ambulante Fijo: ${amb?.name || mId} (${periodStr})`;
+
+        return {
+          merchantId: mId,
+          conceptCode: type === 'ALCABALA' ? 'ALCABALA' : 'AGUA',
+          amount: fee,
+          period: periodStr,
+          paymentMethod: bulkPaymentMethod,
+          notes,
+        };
+      });
+
+      const res = await apiRequest('/payments/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+      });
+
+      if (type === 'ALCABALA') {
+        setPaymentsMap((prev) => {
+          const next = { ...prev };
+          selectedAmbulanteIds.forEach((mId) => {
+            next[`${mId}-${selectedDayForBulk}`] = { amount: fee, op: `REC-BULK-${Date.now().toString().slice(-4)}` };
+          });
+          return next;
+        });
+      } else {
+        setWaterPaymentsMap((prev) => {
+          const next = { ...prev };
+          selectedAmbulanteIds.forEach((mId) => {
+            next[mId] = { paid: true, op: `REC-BULK-${Date.now().toString().slice(-4)}` };
+          });
+          return next;
+        });
+      }
+
+      alert(`✓ Se registraron exitosamente ${res.count || count} cobros de ${conceptLabel}.`);
+      setSelectedAmbulanteIds(new Set());
+      await loadData();
+    } catch (err: any) {
+      alert('Error al guardar cobros en masa: ' + (err.message || err));
+    } finally {
+      setIsSavingBulk(false);
+    }
+  };
+
   // Click en casilla para cobrar
   const handleCellClick = (merchant: AmbulanteFijo, day: number) => {
     const key = `${merchant.id}-${day}`;
@@ -641,17 +748,108 @@ export default function AmbulantesFijosPage() {
       {/* TAB 1: CUADRÍCULA DE COBRO DIARIO (ALCABALA) */}
       {activeTab === 'CRONOGRAMA' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          {/* Barra de Cobro y Guardado en Masa de Alcabala (Períodos Pasados y Actuales) */}
+          <div className="p-3 bg-amber-50/80 border-b border-amber-200 flex flex-wrap items-center justify-between gap-3 shadow-inner">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-white border border-amber-300 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900 shadow-sm">
+                <span>Día a Cobrar:</span>
+                <select
+                  value={selectedDayForBulk}
+                  onChange={(e) => {
+                    setSelectedDayForBulk(Number(e.target.value));
+                    setSelectedAmbulanteIds(new Set());
+                  }}
+                  className="bg-transparent font-black text-amber-900 outline-none cursor-pointer"
+                >
+                  {daysArray.map((d) => (
+                    <option key={d} value={d}>
+                      Día {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={selectAllPendingAlcabala}
+                className="px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>
+                  Seleccionar Pendientes Día {selectedDayForBulk} (
+                  {filteredMerchants.filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount).length})
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={deselectAllAmbulantes}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
+              >
+                Deseleccionar
+              </button>
+
+              {selectedAmbulanteIds.size > 0 && (
+                <span className="text-xs font-black text-amber-950 bg-amber-200 px-3 py-1 rounded-xl">
+                  {selectedAmbulanteIds.size} seleccionados (S/ {(selectedAmbulanteIds.size * 5).toFixed(2)})
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={bulkPaymentMethod}
+                onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                className="bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-amber-900 outline-none"
+              >
+                <option value="EFECTIVO">💵 En Efectivo</option>
+                <option value="YAPE">📱 Yape / Digital</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => handleBulkSaveAmbulantes('ALCABALA')}
+                disabled={selectedAmbulanteIds.size === 0 || isSavingBulk}
+                className="px-4 py-2 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {isSavingBulk
+                    ? 'Guardando...'
+                    : `Guardar Alcabala Día ${selectedDayForBulk} (${selectedAmbulanteIds.size})`}
+                </span>
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] sticky top-0 z-20 shadow-sm">
                 <tr>
-                  <th className="py-2.5 px-3 border border-slate-200 text-center sticky left-0 bg-slate-100 z-30 w-10">N°</th>
-                  <th className="py-2.5 px-3 border border-slate-200 sticky left-10 bg-slate-100 z-30 min-w-[200px]">Apellidos y Nombres</th>
-                  <th className="py-2.5 px-2 border border-slate-200 text-center sticky left-[240px] bg-slate-100 z-30 min-w-[90px]">Giro</th>
+                  <th className="py-2.5 px-3 border border-slate-200 text-center sticky left-0 bg-slate-100 z-30 w-12">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredMerchants.filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount).length > 0 &&
+                        filteredMerchants
+                          .filter((m) => !paymentsMap[`${m.id}-${selectedDayForBulk}`]?.amount)
+                          .every((m) => selectedAmbulanteIds.has(m.id))
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) selectAllPendingAlcabala();
+                        else deselectAllAmbulantes();
+                      }}
+                      className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                      title="Seleccionar / Deseleccionar pendientes del día"
+                    />
+                  </th>
+                  <th className="py-2.5 px-3 border border-slate-200 text-center sticky left-12 bg-slate-100 z-30 w-10">N°</th>
+                  <th className="py-2.5 px-3 border border-slate-200 sticky left-22 bg-slate-100 z-30 min-w-[200px]">Apellidos y Nombres</th>
+                  <th className="py-2.5 px-2 border border-slate-200 text-center sticky left-[250px] bg-slate-100 z-30 min-w-[90px]">Giro</th>
 
                   {/* Días 1..31 */}
                   {daysArray.map((day) => (
-                    <th key={day} className="py-2.5 px-1 border border-slate-200 text-center min-w-[34px] w-[34px]">
+                    <th key={day} className={`py-2.5 px-1 border border-slate-200 text-center min-w-[34px] w-[34px] ${day === selectedDayForBulk ? 'bg-amber-200 text-amber-950 font-black' : ''}`}>
                       {day}
                     </th>
                   ))}
@@ -668,16 +866,24 @@ export default function AmbulantesFijosPage() {
 
                   return (
                     <tr key={merchant.id} className="hover:bg-amber-50/40 transition">
-                      <td className="py-2 px-3 border border-slate-200 text-center font-bold text-slate-500 sticky left-0 bg-white z-10">
+                      <td className="py-2 px-3 border border-slate-200 text-center sticky left-0 bg-white z-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedAmbulanteIds.has(merchant.id)}
+                          onChange={() => toggleSelectAmbulante(merchant.id)}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                        />
+                      </td>
+                      <td className="py-2 px-3 border border-slate-200 text-center font-bold text-slate-500 sticky left-12 bg-white z-10">
                         {index + 1}
                       </td>
-                      <td className="py-2 px-3 border border-slate-200 font-bold text-slate-800 truncate sticky left-10 bg-white z-10">
+                      <td className="py-2 px-3 border border-slate-200 font-bold text-slate-800 truncate sticky left-22 bg-white z-10">
                         <div className="flex items-center justify-between">
                           <span>{merchant.name}</span>
                           <span className="text-[10px] font-mono text-slate-400 font-normal">{merchant.dni || ''}</span>
                         </div>
                       </td>
-                      <td className="py-2 px-2 border border-slate-200 text-center sticky left-[240px] bg-white z-10">
+                      <td className="py-2 px-2 border border-slate-200 text-center sticky left-[250px] bg-white z-10">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
                           {merchant.cat}
                         </span>
@@ -715,18 +921,86 @@ export default function AmbulantesFijosPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Resumen de Agua: Pagados vs Deudores */}
+          <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-4">
+              <span className="font-bold text-slate-700">
+                Agua del Mes:{' '}
+                <span className="text-emerald-700 font-black">
+                  {filteredMerchants.filter((m) => !!waterPaymentsMap[m.id]?.paid).length} Pagaron
+                </span>
+                {' / '}
+                <span className="text-amber-700 font-black">
+                  {filteredMerchants.filter((m) => !waterPaymentsMap[m.id]?.paid).length} Pendientes
+                </span>
+              </span>
+              <span className="text-slate-400">|</span>
+              <span className="font-bold text-slate-700">
+                Recaudación Agua Mes:{' '}
+                <span className="font-mono font-black text-cyan-800">
+                  S/ {totalWaterMonth.toFixed(2)}
+                </span>
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
       {/* TAB 2: COBRO DE AGUA AMBULANTES */}
       {activeTab === 'AGUA' && (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">
                 Padrón de Cobranza de Agua - Ambulantes Fijos ({MONTHS.find((m) => m.val === selectedMonth)?.name} {selectedYear})
               </h3>
               <p className="text-[11px] text-slate-400">Cuota fija mensual de S/ 4.00 (editable por comerciante)</p>
+            </div>
+
+            {/* Acciones Masivas Agua */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAllPendingWater}
+                className="px-3 py-1.5 bg-white hover:bg-cyan-100 text-cyan-900 border border-cyan-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>
+                  Seleccionar Pendientes de Agua ({filteredMerchants.filter((m) => !waterPaymentsMap[m.id]?.paid).length})
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={deselectAllAmbulantes}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
+              >
+                Deseleccionar
+              </button>
+
+              <select
+                value={bulkPaymentMethod}
+                onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                className="bg-white border border-cyan-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-cyan-900 outline-none"
+              >
+                <option value="EFECTIVO">💵 En Efectivo</option>
+                <option value="YAPE">📱 Yape / Digital</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => handleBulkSaveAmbulantes('AGUA')}
+                disabled={selectedAmbulanteIds.size === 0 || isSavingBulk}
+                className="px-4 py-2 bg-cyan-700 hover:bg-cyan-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {isSavingBulk
+                    ? 'Guardando...'
+                    : `Guardar Agua en Masa (${selectedAmbulanteIds.size})`}
+                </span>
+              </button>
             </div>
           </div>
 
@@ -734,6 +1008,22 @@ export default function AmbulantesFijosPage() {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] border-b border-slate-200">
                 <tr>
+                  <th className="py-3 px-3 text-center w-10">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredMerchants.filter((m) => !waterPaymentsMap[m.id]?.paid).length > 0 &&
+                        filteredMerchants
+                          .filter((m) => !waterPaymentsMap[m.id]?.paid)
+                          .every((m) => selectedAmbulanteIds.has(m.id))
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) selectAllPendingWater();
+                        else deselectAllAmbulantes();
+                      }}
+                      className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-3.5 h-3.5 cursor-pointer"
+                    />
+                  </th>
                   <th className="py-3 px-4">N°</th>
                   <th className="py-3 px-4">Comerciante</th>
                   <th className="py-3 px-4">Giro</th>
@@ -749,6 +1039,18 @@ export default function AmbulantesFijosPage() {
 
                   return (
                     <tr key={merchant.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3 px-3 text-center">
+                        {isPaid ? (
+                          <span className="text-cyan-700 font-black text-xs">✓</span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={selectedAmbulanteIds.has(merchant.id)}
+                            onChange={() => toggleSelectAmbulante(merchant.id)}
+                            className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-3.5 h-3.5 cursor-pointer"
+                          />
+                        )}
+                      </td>
                       <td className="py-3 px-4 font-bold text-slate-400">{idx + 1}</td>
                       <td className="py-3 px-4 font-bold text-slate-800">{merchant.name}</td>
                       <td className="py-3 px-4">
@@ -785,6 +1087,29 @@ export default function AmbulantesFijosPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Resumen de Agua: Pagados vs Deudores */}
+          <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-4">
+              <span className="font-bold text-slate-700">
+                Agua del Mes:{' '}
+                <span className="text-emerald-700 font-black">
+                  {filteredMerchants.filter((m) => !!waterPaymentsMap[m.id]?.paid).length} Pagaron
+                </span>
+                {' / '}
+                <span className="text-amber-700 font-black">
+                  {filteredMerchants.filter((m) => !waterPaymentsMap[m.id]?.paid).length} Pendientes
+                </span>
+              </span>
+              <span className="text-slate-400">|</span>
+              <span className="font-bold text-slate-700">
+                Recaudación Agua Mes:{' '}
+                <span className="font-mono font-black text-cyan-800">
+                  S/ {totalWaterMonth.toFixed(2)}
+                </span>
+              </span>
+            </div>
           </div>
         </div>
       )}

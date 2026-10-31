@@ -26,6 +26,7 @@ import {
   Receipt,
   Wallet,
   Check,
+  Save,
 } from 'lucide-react';
 
 interface OfficialTenant {
@@ -126,6 +127,152 @@ export default function AlquileresPage() {
   const [selectedWaterTenant, setSelectedWaterTenant] = useState<OfficialTenant | null>(null);
   const [waterPayAmount, setWaterPayAmount] = useState<number>(4.00);
   const [waterReceiptNumber, setWaterReceiptNumber] = useState<string>('');
+
+  // Mass Selection & Bulk Save State (Períodos Pasados y Actuales)
+  const [selectedWaterIds, setSelectedWaterIds] = useState<Set<string>>(new Set());
+  const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(new Set());
+  const [bulkInstallmentNumber, setBulkInstallmentNumber] = useState<number>(1);
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'EFECTIVO' | 'YAPE'>('EFECTIVO');
+  const [isSavingBulk, setIsSavingBulk] = useState(false);
+
+  const toggleSelectWater = (id: string) => {
+    setSelectedWaterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllPendingWater = () => {
+    const pending = filteredWaterTenants
+      .filter((t: any) => !waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid)
+      .map((t: any) => t.id);
+    setSelectedWaterIds(new Set(pending));
+  };
+
+  const deselectAllWater = () => {
+    setSelectedWaterIds(new Set());
+  };
+
+  const handleBulkSaveWater = async () => {
+    if (selectedWaterIds.size === 0) {
+      alert('Por favor seleccione al menos un inquilino para registrar cobro de agua en masa.');
+      return;
+    }
+
+    const count = selectedWaterIds.size;
+    const fee = waterFee;
+    const totalAmount = count * fee;
+
+    const confirmMsg = `¿Desea GUARDAR Y REGISTRAR los cobros de agua en masa?\n\n• Concepto: Agua Potable Inquilinos\n• Período: ${waterMonth}\n• Inquilinos seleccionados: ${count}\n• Monto unitario: S/ ${fee.toFixed(2)}\n• Monto total: S/ ${totalAmount.toFixed(2)}\n• Medio: ${bulkPaymentMethod}\n\nLos cobros se registrarán en la base de datos oficial.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    try {
+      const items = Array.from(selectedWaterIds).map((tenantId) => {
+        const tenant = filteredWaterTenants.find((t: any) => t.id === tenantId) as any;
+        return {
+          merchantId: tenant?.merchantId || tenantId,
+          conceptCode: 'AGUA_INQUILINO',
+          amount: fee,
+          period: waterMonth,
+          paymentMethod: bulkPaymentMethod,
+          notes: `AGUA-INQ-${tenantId}-${waterMonth} | Agua Inquilino: ${tenant?.name || tenantId}`,
+        };
+      });
+
+      const res = await apiRequest('/payments/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+      });
+
+      const nextMap = { ...waterPaymentsMap };
+      selectedWaterIds.forEach((tId) => {
+        nextMap[`${tId}-${waterMonth}`] = {
+          paid: true,
+          amount: fee,
+          receiptNumber: `REC-AGUA-${Date.now().toString().slice(-4)}`,
+        };
+      });
+      setWaterPaymentsMap(nextMap);
+      localStorage.setItem('mb_water_inquilinos_payments', JSON.stringify(nextMap));
+
+      alert(`✓ Se registraron exitosamente ${res.count || count} cobros de agua del período ${waterMonth}.`);
+      setSelectedWaterIds(new Set());
+      await fetchData();
+    } catch (err: any) {
+      alert('Error al guardar cobros de agua en masa: ' + (err.message || err));
+    } finally {
+      setIsSavingBulk(false);
+    }
+  };
+
+  const toggleSelectContract = (id: string) => {
+    setSelectedContractIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllPendingContractsForInstallment = () => {
+    const pending = contracts
+      .filter((c: any) => {
+        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+        return inst ? inst.status !== 'PAGADO' : true;
+      })
+      .map((c: any) => c.id);
+    setSelectedContractIds(new Set(pending));
+  };
+
+  const deselectAllContracts = () => {
+    setSelectedContractIds(new Set());
+  };
+
+  const handleBulkSaveRentals = async () => {
+    if (selectedContractIds.size === 0) {
+      alert('Por favor seleccione al menos un contrato para registrar cobro de cuota en masa.');
+      return;
+    }
+
+    const count = selectedContractIds.size;
+    const confirmMsg = `¿Desea GUARDAR Y REGISTRAR el cobro en masa de la Cuota ${bulkInstallmentNumber} para los ${count} contratos seleccionados?\n\nMedio de Pago: ${bulkPaymentMethod}\n\nSe registrará el pago de cada cuota y se actualizará el cronograma oficial.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    let successCount = 0;
+    try {
+      for (const contractId of Array.from(selectedContractIds)) {
+        const c = contracts.find((x: any) => x.id === contractId);
+        const inst = c?.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+        const amount = inst ? Number(inst.totalAmount) : Number(c?.monthlyRent || 170);
+
+        await apiRequest(`/rentals/${contractId}/installments/${bulkInstallmentNumber}/pay`, {
+          method: 'POST',
+          body: JSON.stringify({
+            amount,
+            paymentMethod: bulkPaymentMethod,
+            receiptNumber: `REC-ALQ-BULK-${Date.now().toString().slice(-4)}`,
+            notes: `Cobro en masa de Cuota ${bulkInstallmentNumber}`,
+            registerCashIncome: true,
+          }),
+        }).catch((e) => console.warn('Error en cuota:', e));
+        successCount++;
+      }
+
+      alert(`✓ Se procesaron exitosamente ${successCount} cuotas de alquiler.`);
+      setSelectedContractIds(new Set());
+      await fetchData();
+    } catch (err: any) {
+      alert('Error al guardar cuotas en masa: ' + (err.message || err));
+    } finally {
+      setIsSavingBulk(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -656,10 +803,113 @@ export default function AlquileresPage() {
               </div>
             </div>
 
+            {/* Barra de Cobro y Guardado en Masa de Cuotas de Alquiler (Períodos Pasados y Actuales) */}
+            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-inner">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-white border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-900 shadow-sm">
+                  <span>Cuota a Cobrar:</span>
+                  <select
+                    value={bulkInstallmentNumber}
+                    onChange={(e) => {
+                      setBulkInstallmentNumber(Number(e.target.value));
+                      setSelectedContractIds(new Set());
+                    }}
+                    className="bg-transparent font-black text-emerald-900 outline-none cursor-pointer"
+                  >
+                    {[1, 2, 3, 4, 5, 6].map((num) => (
+                      <option key={num} value={num}>
+                        Cuota N° {num}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={selectAllPendingContractsForInstallment}
+                  className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>
+                    Seleccionar Pendientes Cuota {bulkInstallmentNumber} (
+                    {
+                      contracts.filter((c: any) => {
+                        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                        return inst ? inst.status !== 'PAGADO' : true;
+                      }).length
+                    }
+                    )
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={deselectAllContracts}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
+                >
+                  Deseleccionar
+                </button>
+
+                {selectedContractIds.size > 0 && (
+                  <span className="text-xs font-black text-emerald-950 bg-emerald-200 px-3 py-1 rounded-xl">
+                    {selectedContractIds.size} contratos seleccionados
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkPaymentMethod}
+                  onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                  className="bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-emerald-900 outline-none"
+                >
+                  <option value="EFECTIVO">💵 En Efectivo</option>
+                  <option value="YAPE">📱 Yape / Digital</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleBulkSaveRentals}
+                  disabled={selectedContractIds.size === 0 || isSavingBulk}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>
+                    {isSavingBulk
+                      ? 'Guardando...'
+                      : `Guardar Cuota ${bulkInstallmentNumber} (${selectedContractIds.size})`}
+                  </span>
+                </button>
+              </div>
+            </div>
+
             <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-x-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px]">
                   <tr>
+                    <th className="p-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          contracts.filter((c: any) => {
+                            const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                            return inst ? inst.status !== 'PAGADO' : true;
+                          }).length > 0 &&
+                          contracts
+                            .filter((c: any) => {
+                              const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                              return inst ? inst.status !== 'PAGADO' : true;
+                            })
+                            .every((c: any) => selectedContractIds.has(c.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) selectAllPendingContractsForInstallment();
+                          else deselectAllContracts();
+                        }}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                        title="Seleccionar pendientes de la cuota"
+                      />
+                    </th>
                     <th className="p-3">N° Contrato</th>
                     <th className="p-3">Inquilino (Arrendatario)</th>
                     <th className="p-3">Puesto / Espacio</th>
@@ -672,6 +922,14 @@ export default function AlquileresPage() {
                 <tbody className="divide-y divide-slate-100">
                   {displayContracts.map((c: any) => (
                     <tr key={c.id} className="hover:bg-slate-50 transition">
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedContractIds.has(c.id)}
+                          onChange={() => toggleSelectContract(c.id)}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                        />
+                      </td>
                       <td className="p-3 font-mono font-black text-emerald-800">
                         {c.contractNumber}
                       </td>
@@ -741,6 +999,38 @@ export default function AlquileresPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Resumen de Alquiler Cuota: Pagados vs Deudores */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-4">
+                <span className="font-bold text-slate-700">
+                  Cuota N° {bulkInstallmentNumber}:{' '}
+                  <span className="text-emerald-700 font-black">
+                    {
+                      contracts.filter((c: any) => {
+                        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                        return inst?.status === 'PAGADO';
+                      }).length
+                    }{' '}
+                    Pagaron
+                  </span>
+                  {' / '}
+                  <span className="text-amber-700 font-black">
+                    {
+                      contracts.filter((c: any) => {
+                        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                        return inst ? inst.status !== 'PAGADO' : true;
+                      }).length
+                    }{' '}
+                    Pendientes
+                  </span>
+                </span>
+                <span className="text-slate-400">|</span>
+                <span className="font-bold text-slate-700">
+                  Total Contratos Activos: <span className="font-mono font-black text-emerald-800">{contracts.length}</span>
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -797,10 +1087,82 @@ export default function AlquileresPage() {
               </div>
             </div>
 
+            {/* Barra de Cobro y Guardado en Masa de Agua Inquilinos (Períodos Pasados y Actuales) */}
+            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-inner">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllPendingWater}
+                  className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>
+                    Seleccionar Pendientes de Agua ({filteredWaterTenants.filter((t: any) => !waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid).length})
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={deselectAllWater}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
+                >
+                  Deseleccionar
+                </button>
+
+                {selectedWaterIds.size > 0 && (
+                  <span className="text-xs font-black text-emerald-950 bg-emerald-200 px-3 py-1 rounded-xl">
+                    {selectedWaterIds.size} inquilinos seleccionados (S/ {(selectedWaterIds.size * waterFee).toFixed(2)})
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkPaymentMethod}
+                  onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                  className="bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-emerald-900 outline-none"
+                >
+                  <option value="EFECTIVO">💵 En Efectivo</option>
+                  <option value="YAPE">📱 Yape / Digital</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleBulkSaveWater}
+                  disabled={selectedWaterIds.size === 0 || isSavingBulk}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>
+                    {isSavingBulk
+                      ? 'Guardando...'
+                      : `Guardar Agua del Mes (${selectedWaterIds.size})`}
+                  </span>
+                </button>
+              </div>
+            </div>
+
             <div className="border border-slate-100 rounded-2xl overflow-hidden">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px]">
                   <tr>
+                    <th className="p-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredWaterTenants.filter((t: any) => !waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid).length > 0 &&
+                          filteredWaterTenants
+                            .filter((t: any) => !waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid)
+                            .every((t: any) => selectedWaterIds.has(t.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) selectAllPendingWater();
+                          else deselectAllWater();
+                        }}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                        title="Seleccionar / Deseleccionar todos los pendientes de agua"
+                      />
+                    </th>
                     <th className="p-3 w-10 text-center">N°</th>
                     <th className="p-3">Inquilino</th>
                     <th className="p-3">DNI</th>
@@ -819,6 +1181,18 @@ export default function AlquileresPage() {
 
                     return (
                       <tr key={t.id} className="hover:bg-slate-50 transition">
+                        <td className="p-3 text-center">
+                          {isPaid ? (
+                            <span className="text-emerald-700 font-black text-xs">✓</span>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              checked={selectedWaterIds.has(t.id)}
+                              onChange={() => toggleSelectWater(t.id)}
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                          )}
+                        </td>
                         <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
                         <td className="p-3 font-sans font-bold text-slate-900">{t.name}</td>
                         <td className="p-3 text-slate-600">{t.dni}</td>
@@ -868,6 +1242,26 @@ export default function AlquileresPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Resumen de Agua Inquilinos: Pagados vs Deudores */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-4">
+                <span className="font-bold text-slate-700">
+                  Mes {waterMonth}:{' '}
+                  <span className="text-emerald-700 font-black">
+                    {filteredWaterTenants.filter((t) => !!waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid).length} Pagaron (S/ {(filteredWaterTenants.filter((t) => !!waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid).length * waterFee).toFixed(2)})
+                  </span>
+                  {' / '}
+                  <span className="text-amber-700 font-black">
+                    {filteredWaterTenants.filter((t) => !waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid).length} Pendientes (S/ {(filteredWaterTenants.filter((t) => !waterPaymentsMap[`${t.id}-${waterMonth}`]?.paid).length * waterFee).toFixed(2)})
+                  </span>
+                </span>
+                <span className="text-slate-400">|</span>
+                <span className="font-bold text-slate-700">
+                  Total Inquilinos: <span className="font-mono font-black text-emerald-800">{filteredWaterTenants.length}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>

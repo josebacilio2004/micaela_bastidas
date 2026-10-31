@@ -28,6 +28,7 @@ import {
   FileText,
   ChevronRight,
   TrendingUp,
+  Save,
 } from 'lucide-react';
 
 export default function SociosMantenimientoAguaPage() {
@@ -42,6 +43,11 @@ export default function SociosMantenimientoAguaPage() {
   const [types, setTypes] = useState<any[]>([]);
   const [activeRegister, setActiveRegister] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Mass Selection & Bulk Save State (Períodos Pasados y Actuales)
+  const [selectedSocioIds, setSelectedSocioIds] = useState<Set<string>>(new Set());
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'EFECTIVO' | 'YAPE'>('EFECTIVO');
+  const [isSavingBulk, setIsSavingBulk] = useState(false);
 
   // Period / Date Filters
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -265,6 +271,69 @@ export default function SociosMantenimientoAguaPage() {
       })
       .sort((a, b) => new Date(b.paidAt || 0).getTime() - new Date(a.paidAt || 0).getTime());
   }, [payments, socios, search]);
+
+  // Toggle individual selection
+  const toggleSelectSocio = (id: string) => {
+    setSelectedSocioIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Select all pending socios visible in current rows
+  const selectAllPending = () => {
+    const pendingIds = rows.filter((r) => !r.isPaid).map((r) => r.socio.id);
+    setSelectedSocioIds(new Set(pendingIds));
+  };
+
+  // Deselect all
+  const deselectAll = () => {
+    setSelectedSocioIds(new Set());
+  };
+
+  // Save payments in bulk for selected socios (past or current periods)
+  const handleBulkSavePayments = async () => {
+    if (selectedSocioIds.size === 0) {
+      alert('Por favor seleccione al menos un socio para registrar cobro en masa.');
+      return;
+    }
+
+    const count = selectedSocioIds.size;
+    const fee = activeTab === 'MANTENIMIENTO' ? (parseFloat(mantenimientoFee) || 15) : (parseFloat(waterFee) || 4);
+    const conceptName = activeTab === 'MANTENIMIENTO' ? 'Mantenimiento / Alcabala' : 'Servicio de Agua';
+    const totalAmount = count * fee;
+
+    const confirmMsg = `¿Desea GUARDAR Y REGISTRAR los cobros en masa?\n\n• Concepto: ${conceptName}\n• Período: ${selectedMonth}\n• Socios seleccionados: ${count}\n• Monto unitario: S/ ${fee.toFixed(2)}\n• Monto total a recaudar: S/ ${totalAmount.toFixed(2)}\n• Medio de Pago: ${bulkPaymentMethod}\n\nLos cobros se registrarán de forma oficial en la base de datos y se reflejarán en el Padrón, Caja e Historial.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    try {
+      const items = Array.from(selectedSocioIds).map((merchantId) => ({
+        merchantId,
+        conceptCode: activeTab === 'MANTENIMIENTO' ? 'ALCABALA' : 'AGUA',
+        amount: fee,
+        period: selectedMonth,
+        paymentMethod: bulkPaymentMethod,
+        notes: `Cobro en masa de ${conceptName} período ${selectedMonth}`,
+      }));
+
+      const res = await apiRequest('/payments/bulk', {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+      });
+
+      alert(`✓ Se registraron y guardaron exitosamente ${res.count || count} pagos del período ${selectedMonth}.`);
+      setSelectedSocioIds(new Set());
+      await fetchData();
+    } catch (err: any) {
+      alert('Error al guardar pagos en masa: ' + (err.message || err));
+    } finally {
+      setIsSavingBulk(false);
+    }
+  };
 
   // Open Quick Pay Modal
   const handleOpenPay = (socio: any, conceptType: 'MANTENIMIENTO' | 'AGUA') => {
@@ -751,11 +820,83 @@ export default function SociosMantenimientoAguaPage() {
               </div>
             </div>
 
+            {/* Mass Selection & Bulk Save Bar (Períodos Pasados y Actuales) */}
+            <div className="bg-emerald-50/70 border border-emerald-200 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllPending}
+                  className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Seleccionar Todos los Pendientes ({rows.filter((r) => !r.isPaid).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={deselectAll}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
+                >
+                  Deseleccionar
+                </button>
+                {selectedSocioIds.size > 0 && (
+                  <span className="text-xs font-black text-emerald-900 bg-emerald-200/80 px-3 py-1 rounded-xl">
+                    {selectedSocioIds.size} socios seleccionados (Total: S/{' '}
+                    {(
+                      selectedSocioIds.size *
+                      (activeTab === 'MANTENIMIENTO'
+                        ? parseFloat(mantenimientoFee) || 15
+                        : parseFloat(waterFee) || 4)
+                    ).toFixed(2)}
+                    )
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkPaymentMethod}
+                  onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                  className="bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-emerald-900 focus:outline-none"
+                >
+                  <option value="EFECTIVO">💵 En Efectivo</option>
+                  <option value="YAPE">📱 Yape / Digital</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={handleBulkSavePayments}
+                  disabled={selectedSocioIds.size === 0 || isSavingBulk}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>
+                    {isSavingBulk
+                      ? 'Guardando en BD...'
+                      : `Guardar Pagos (${selectedSocioIds.size})`}
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* Table */}
             <div className="border border-slate-100 rounded-2xl overflow-hidden max-h-[550px] overflow-y-auto">
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px] sticky top-0 z-10">
                   <tr>
+                    <th className="p-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={
+                          rows.filter((r) => !r.isPaid).length > 0 &&
+                          rows.filter((r) => !r.isPaid).every((r) => selectedSocioIds.has(r.socio.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) selectAllPending();
+                          else deselectAll();
+                        }}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                        title="Seleccionar / Deseleccionar todos los pendientes"
+                      />
+                    </th>
                     <th className="p-3 w-10 text-center">N°</th>
                     <th className="p-3">Socio / Comerciante</th>
                     <th className="p-3">DNI</th>
@@ -769,7 +910,7 @@ export default function SociosMantenimientoAguaPage() {
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-slate-400 font-sans">
+                      <td colSpan={9} className="p-8 text-center text-slate-400 font-sans">
                         No se encontraron socios que coincidan con los filtros aplicados.
                       </td>
                     </tr>
@@ -781,6 +922,18 @@ export default function SociosMantenimientoAguaPage() {
 
                       return (
                         <tr key={s.id} className="hover:bg-slate-50 transition">
+                          <td className="p-3 text-center">
+                            {row.isPaid ? (
+                              <span className="text-emerald-600 font-black text-xs" title="Este socio ya pagó">✓</span>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={selectedSocioIds.has(s.id)}
+                                onChange={() => toggleSelectSocio(s.id)}
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                              />
+                            )}
+                          </td>
                           <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
                           <td className="p-3 font-sans">
                             <p className="font-bold text-slate-900 leading-tight">
@@ -873,6 +1026,78 @@ export default function SociosMantenimientoAguaPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Resumen & Historial de Pagados vs Deudores del Período */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 font-sans text-xs shadow-inner">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                  <span className="font-bold text-slate-700">Pagaron ({rows.filter((r) => r.isPaid).length}):</span>
+                  <span className="font-mono font-black text-emerald-800">
+                    S/{' '}
+                    {rows
+                      .filter((r) => r.isPaid)
+                      .reduce((acc, r) => acc + r.amount, 0)
+                      .toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>
+                  <span className="font-bold text-slate-700">
+                    Pendientes / Deudores ({rows.filter((r) => !r.isPaid).length}):
+                  </span>
+                  <span className="font-mono font-black text-amber-800">
+                    S/{' '}
+                    {rows
+                      .filter((r) => !r.isPaid)
+                      .reduce((acc, r) => acc + r.amount, 0)
+                      .toFixed(2)}
+                  </span>
+                </div>
+                <div className="text-slate-500 font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                  Cumplimiento:{' '}
+                  <span className="font-black text-slate-800">
+                    {rows.length > 0
+                      ? `${Math.round((rows.filter((r) => r.isPaid).length / rows.length) * 100)}%`
+                      : '0%'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'PAID' ? 'ALL' : 'PAID')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition shadow-sm ${
+                    statusFilter === 'PAID'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'
+                  }`}
+                >
+                  Ver Solo Pagados ({rows.filter((r) => r.isPaid).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'ALL' : 'PENDING')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition shadow-sm ${
+                    statusFilter === 'PENDING'
+                      ? 'bg-amber-600 text-white shadow'
+                      : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'
+                  }`}
+                >
+                  Ver Solo Deudores ({rows.filter((r) => !r.isPaid).length})
+                </button>
+                {statusFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('ALL')}
+                    className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition"
+                  >
+                    Ver Todos
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </>
