@@ -321,6 +321,9 @@ export class CashflowService {
         where: {
           ...(dateFilter ? { date: dateFilter } : {}),
         },
+        include: {
+          collections: true,
+        },
         orderBy: { date: 'desc' },
       });
 
@@ -332,6 +335,18 @@ export class CashflowService {
           l.orderNumber.toLowerCase().includes(query.search.toLowerCase());
 
         if (searchMatches) {
+          const totalRepaid = (l.collections || []).reduce((sum: number, c: any) => sum + Number(c.totalAmount || 0), 0);
+          let loanStatus = 'DESEMBOLSADO (POR COBRAR)';
+          if (l.status === 'CANCELADO' || totalRepaid >= Number(l.totalAmount)) {
+            loanStatus = 'TOTALMENTE RECUPERADO';
+          } else if (totalRepaid > 0) {
+            loanStatus = `EN AMORTIZACIÓN (S/ ${totalRepaid.toFixed(2)} recuperado)`;
+          } else if (l.status === 'PRORROGADO') {
+            loanStatus = 'PRORROGADO (POR COBRAR)';
+          } else if (l.status === 'MOROSO' || l.status === 'VENCIDO') {
+            loanStatus = 'EN MORA (PENDIENTE)';
+          }
+
           results.push({
             id: l.id,
             code: l.orderNumber,
@@ -346,8 +361,8 @@ export class CashflowService {
             paymentMethod: 'EFECTIVO',
             cashRegisterId: null,
             cashRegister: null,
-            status: l.status === 'VIGENTE' || l.status === 'CANCELADO' ? 'PAGADO' : l.status,
-            notes: l.notes,
+            status: loanStatus,
+            notes: (l.notes ? `${l.notes} | ` : '') + `Deuda Total: S/ ${Number(l.totalAmount).toFixed(2)} | Cobrado: S/ ${totalRepaid.toFixed(2)}`,
             createdBy: null,
             source: 'LOAN',
           });

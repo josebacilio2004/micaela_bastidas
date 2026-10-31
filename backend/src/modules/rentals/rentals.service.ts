@@ -422,9 +422,15 @@ export class RentalsService {
         ? `${new Date(installment.dueDate).getFullYear()}-${String(new Date(installment.dueDate).getMonth() + 1).padStart(2, '0')}`
         : new Date().toISOString().slice(0, 7);
 
+      let opNumber = receiptNumber;
+      const opExists = await this.prisma.payment.findUnique({ where: { operationNumber: opNumber } });
+      if (opExists) {
+        opNumber = `MB-ALQ-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+      }
+
       await this.prisma.payment.create({
         data: {
-          operationNumber: receiptNumber,
+          operationNumber: opNumber,
           merchantId: validMerchantId,
           conceptId: concept.id,
           amount: installment.totalAmount,

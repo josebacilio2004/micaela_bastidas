@@ -27,6 +27,7 @@ import {
   Wallet,
   Check,
   Save,
+  Filter,
 } from 'lucide-react';
 
 interface OfficialTenant {
@@ -135,6 +136,195 @@ export default function AlquileresPage() {
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState<'EFECTIVO' | 'YAPE'>('EFECTIVO');
   const [isSavingBulk, setIsSavingBulk] = useState(false);
 
+  // Filtros Generales de Fechas y Períodos para Alquileres
+  const [filterYear, setFilterYear] = useState<string>('2026');
+  const [filterPeriodMonth, setFilterPeriodMonth] = useState<string>('ALL');
+  const [dateRangeFrom, setDateRangeFrom] = useState<string>('');
+  const [dateRangeTo, setDateRangeTo] = useState<string>('');
+  const [scheduleStatusFilter, setScheduleStatusFilter] = useState<'ALL' | 'WITH_PENDING' | 'UP_TO_DATE' | 'FINALIZED'>('ALL');
+  const [viewMode, setViewMode] = useState<'PADRON' | 'CUADRICULA'>('PADRON');
+
+  // Combined Contract List: DB Contracts + Official fallback
+  const displayContracts = useMemo(() => {
+    if (contracts.length > 0) return contracts;
+    return OFFICIAL_TENANTS.map((ot) => ({
+      id: ot.id,
+      contractNumber: `CTR-${ot.stallNumber}-2026`,
+      tenantName: ot.name,
+      tenantDni: ot.dni,
+      stallCode: ot.stallNumber,
+      monthlyRent: ot.monthlyRent,
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      monthsCount: 6,
+      businessCategory: ot.businessCategory,
+      status: 'ACTIVO',
+      installments: [
+        { installmentNumber: 1, dueDate: '2026-01-10', totalAmount: ot.monthlyRent, status: 'PAGADO' },
+        { installmentNumber: 2, dueDate: '2026-02-10', totalAmount: ot.monthlyRent, status: 'PAGADO' },
+        { installmentNumber: 3, dueDate: '2026-03-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
+        { installmentNumber: 4, dueDate: '2026-04-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
+        { installmentNumber: 5, dueDate: '2026-05-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
+        { installmentNumber: 6, dueDate: '2026-06-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
+      ],
+    }));
+  }, [contracts]);
+
+  // Contratos filtrados con los Filtros Generales de Fechas, Períodos y Estados
+  const filteredContracts = useMemo(() => {
+    return displayContracts.filter((c: any) => {
+      // 1. Buscador
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const matches =
+          c.tenantName?.toLowerCase().includes(q) ||
+          c.tenantDni?.includes(q) ||
+          c.stallCode?.toLowerCase().includes(q) ||
+          c.contractNumber?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+
+      // 2. Filtro de Año
+      if (filterYear !== 'ALL') {
+        const startYear = c.startDate ? new Date(c.startDate).getFullYear().toString() : '2026';
+        if (startYear !== filterYear) return false;
+      }
+
+      // 3. Filtro de Rango Desde/Hasta
+      if (dateRangeFrom) {
+        if (!c.startDate || new Date(c.startDate) < new Date(dateRangeFrom)) return false;
+      }
+      if (dateRangeTo) {
+        if (!c.startDate || new Date(c.startDate) > new Date(dateRangeTo)) return false;
+      }
+
+      // 4. Filtro de Período / Mes del Cronograma
+      if (filterPeriodMonth !== 'ALL') {
+        const instList = c.installments || c.schedule || [];
+        const matchesMonth = instList.some((inst: any) => {
+          if (!inst.dueDate) return false;
+          const ym = new Date(inst.dueDate).toISOString().slice(0, 7);
+          return ym === filterPeriodMonth;
+        });
+        if (!matchesMonth) return false;
+      }
+
+      // 5. Filtro de Estado de Cuotas
+      const instList = c.installments || c.schedule || [];
+      const pendingCount = instList.filter((i: any) => i.status !== 'PAGADO').length;
+      if (scheduleStatusFilter === 'WITH_PENDING' && pendingCount === 0) return false;
+      if (scheduleStatusFilter === 'UP_TO_DATE' && pendingCount > 0) return false;
+      if (scheduleStatusFilter === 'FINALIZED' && c.status !== 'FINALIZADO' && pendingCount > 0) return false;
+
+      return true;
+    });
+  }, [displayContracts, search, filterYear, filterPeriodMonth, dateRangeFrom, dateRangeTo, scheduleStatusFilter]);
+
+  const rentalStats = useMemo(() => {
+    let totalPaid = 0;
+    let totalDebt = 0;
+    let withPendingCount = 0;
+    let upToDateCount = 0;
+
+    filteredContracts.forEach((c: any) => {
+      const instList = c.installments || c.schedule || [];
+      const paid = instList.filter((i: any) => i.status === 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
+      const debt = instList.filter((i: any) => i.status !== 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
+      totalPaid += paid;
+      totalDebt += debt;
+      if (debt > 0) withPendingCount++;
+      else upToDateCount++;
+    });
+
+    return {
+      totalContracts: filteredContracts.length,
+      totalPaid,
+      totalDebt,
+      withPendingCount,
+      upToDateCount,
+    };
+  }, [filteredContracts]);
+
+  // Matriz de casillas seleccionadas para cobro masivo de alquileres: Set de `${contractId}-${installmentNumber}`
+  const [selectedRentalGridCells, setSelectedRentalGridCells] = useState<Set<string>>(new Set());
+
+  const totalSelectedGridAmount = useMemo(() => {
+    let total = 0;
+    selectedRentalGridCells.forEach((key) => {
+      const [contractId, instNumStr] = key.split('-');
+      const instNum = Number(instNumStr);
+      const c = contracts.find((x: any) => x.id === contractId) || displayContracts.find((x: any) => x.id === contractId);
+      if (c) {
+        const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === instNum);
+        total += inst ? Number(inst.totalAmount) : Number(c.monthlyRent || 170);
+      }
+    });
+    return total;
+  }, [selectedRentalGridCells, contracts, displayContracts]);
+
+  const toggleRentalGridCell = (contractId: string, instNum: number) => {
+    setSelectedRentalGridCells((prev) => {
+      const next = new Set(prev);
+      const key = `${contractId}-${instNum}`;
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleColumnCuota = (cuotaNum: number) => {
+    setSelectedRentalGridCells((prev) => {
+      const next = new Set(prev);
+      const pendingForCol = filteredContracts.filter((c: any) => {
+        const inst = (c.installments || c.schedule || []).find((i: any) => i.installmentNumber === cuotaNum);
+        return inst ? inst.status !== 'PAGADO' : true;
+      });
+
+      const allColSelected = pendingForCol.every((c: any) => next.has(`${c.id}-${cuotaNum}`));
+      pendingForCol.forEach((c: any) => {
+        const key = `${c.id}-${cuotaNum}`;
+        if (allColSelected) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  };
+
+  const toggleRowContract = (contractId: string) => {
+    const c = contracts.find((x: any) => x.id === contractId);
+    if (!c) return;
+    const instList = c.installments || c.schedule || [];
+    const pendingInsts = instList.filter((i: any) => i.status !== 'PAGADO');
+
+    setSelectedRentalGridCells((prev) => {
+      const next = new Set(prev);
+      const allRowSelected = pendingInsts.every((i: any) => next.has(`${contractId}-${i.installmentNumber}`));
+      pendingInsts.forEach((i: any) => {
+        const key = `${contractId}-${i.installmentNumber}`;
+        if (allRowSelected) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  };
+
+  const selectAllPendingInGrid = () => {
+    const next = new Set<string>();
+    filteredContracts.forEach((c: any) => {
+      const instList = c.installments || c.schedule || [];
+      instList.forEach((i: any) => {
+        if (i.status !== 'PAGADO') {
+          next.add(`${c.id}-${i.installmentNumber}`);
+        }
+      });
+    });
+    setSelectedRentalGridCells(next);
+  };
+
+  const clearRentalGridSelection = () => {
+    setSelectedRentalGridCells(new Set());
+  };
+
   const toggleSelectWater = (id: string) => {
     setSelectedWaterIds((prev) => {
       const next = new Set(prev);
@@ -219,9 +409,9 @@ export default function AlquileresPage() {
   };
 
   const selectAllPendingContractsForInstallment = () => {
-    const pending = contracts
+    const pending = filteredContracts
       .filter((c: any) => {
-        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+        const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
         return inst ? inst.status !== 'PAGADO' : true;
       })
       .map((c: any) => c.id);
@@ -230,6 +420,75 @@ export default function AlquileresPage() {
 
   const deselectAllContracts = () => {
     setSelectedContractIds(new Set());
+  };
+
+  const handleQuickPayInstallment = (contract: any, installmentNumber: number) => {
+    setSelectedContractForPay(contract);
+    const inst = (contract.installments || contract.schedule || []).find((s: any) => s.installmentNumber === installmentNumber);
+    setPayForm({
+      installmentNumber,
+      amount: inst ? Number(inst.totalAmount) : Number(contract.monthlyRent || 170),
+      paymentMethod: 'EFECTIVO',
+      receiptNumber: `REC-ALQ-${contract.stallCode || 'PST'}-C${installmentNumber}-${Date.now().toString().slice(-4)}`,
+      notes: `Alquiler Puesto ${contract.stallCode} - Cuota ${installmentNumber} (${contract.tenantName})`,
+      registerCashIncome: true,
+    });
+    setIsPayModalOpen(true);
+  };
+
+  const handleConsolidatedRentalGridSave = async () => {
+    if (selectedRentalGridCells.size === 0) {
+      alert('Por favor seleccione al menos una cuota en la cuadrícula para consolidar.');
+      return;
+    }
+
+    const count = selectedRentalGridCells.size;
+    let totalMonto = 0;
+    const itemsToPay: Array<{ contractId: string; contract: any; installmentNumber: number; amount: number }> = [];
+
+    selectedRentalGridCells.forEach((key) => {
+      const [contractId, instNumStr] = key.split('-');
+      const instNum = Number(instNumStr);
+      const c = contracts.find((x: any) => x.id === contractId) || displayContracts.find((x: any) => x.id === contractId);
+      if (c) {
+        const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === instNum);
+        const amt = inst ? Number(inst.totalAmount) : Number(c.monthlyRent || 170);
+        totalMonto += amt;
+        itemsToPay.push({ contractId, contract: c, installmentNumber: instNum, amount: amt });
+      }
+    });
+
+    const confirmMsg = `¿Desea GUARDAR Y CONSOLIDAR los cobros seleccionados de alquiler?\n\n  Cuotas seleccionadas: ${count}\n  Monto total a recaudar: S/ ${totalMonto.toFixed(2)}\n  Medio de Pago: ${bulkPaymentMethod}\n\nLos cobros se registrarán de forma oficial en la Base de Datos, Caja e Historial General.`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsSavingBulk(true);
+    let successCount = 0;
+    try {
+      let idx = 0;
+      for (const item of itemsToPay) {
+        idx++;
+        const receiptNumber = `REC-ALQ-${item.contract.stallCode || 'PST'}-C${item.installmentNumber}-${Date.now().toString().slice(-4)}-${idx}`;
+        await apiRequest(`/rentals/${item.contractId}/installments/${item.installmentNumber}/pay`, {
+          method: 'POST',
+          body: JSON.stringify({
+            amount: item.amount,
+            paymentMethod: bulkPaymentMethod,
+            receiptNumber,
+            notes: `Alquiler Puesto ${item.contract.stallCode} - Cuota ${item.installmentNumber} (${item.contract.tenantName})`,
+            registerCashIncome: true,
+          }),
+        }).catch((e) => console.warn('Error en cuota:', e));
+        successCount++;
+      }
+
+      alert(`✓ Se consolidaron y registraron exitosamente ${successCount} cuotas de alquiler por un total de S/ ${totalMonto.toFixed(2)}.`);
+      setSelectedRentalGridCells(new Set());
+      await fetchData();
+    } catch (err: any) {
+      alert('Error al consolidar cuotas: ' + (err.message || err));
+    } finally {
+      setIsSavingBulk(false);
+    }
   };
 
   const handleBulkSaveRentals = async () => {
@@ -246,18 +505,22 @@ export default function AlquileresPage() {
     setIsSavingBulk(true);
     let successCount = 0;
     try {
+      let idx = 0;
       for (const contractId of Array.from(selectedContractIds)) {
+        idx++;
         const c = contracts.find((x: any) => x.id === contractId);
-        const inst = c?.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+        const inst = (c?.installments || c?.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
         const amount = inst ? Number(inst.totalAmount) : Number(c?.monthlyRent || 170);
+
+        const receiptNumber = `REC-ALQ-${c?.stallCode || 'PST'}-C${bulkInstallmentNumber}-${Date.now().toString().slice(-4)}-${idx}`;
 
         await apiRequest(`/rentals/${contractId}/installments/${bulkInstallmentNumber}/pay`, {
           method: 'POST',
           body: JSON.stringify({
             amount,
             paymentMethod: bulkPaymentMethod,
-            receiptNumber: `REC-ALQ-BULK-${Date.now().toString().slice(-4)}`,
-            notes: `Cobro en masa de Cuota ${bulkInstallmentNumber}`,
+            receiptNumber,
+            notes: `Alquiler Puesto ${c?.stallCode} - Cuota ${bulkInstallmentNumber} (${c?.tenantName})`,
             registerCashIncome: true,
           }),
         }).catch((e) => console.warn('Error en cuota:', e));
@@ -757,30 +1020,6 @@ export default function AlquileresPage() {
     );
   }, [waterTenantsList, waterSearch]);
 
-  // Combined Contract List: DB Contracts + Official fallback
-  const displayContracts = useMemo(() => {
-    if (contracts.length > 0) return contracts;
-    // Map official tenants into virtual contract structures
-    return OFFICIAL_TENANTS.map((ot) => ({
-      id: ot.id,
-      contractNumber: `CTR-${ot.stallNumber}-2026`,
-      tenantName: ot.name,
-      tenantDni: ot.dni,
-      stallCode: ot.stallNumber,
-      monthlyRent: ot.monthlyRent,
-      startDate: '2026-01-01',
-      endDate: '2026-12-31',
-      monthsCount: 12,
-      businessCategory: ot.businessCategory,
-      status: 'ACTIVO',
-      installments: [
-        { installmentNumber: 1, dueDate: '2026-01-10', totalAmount: ot.monthlyRent, status: 'PAGADO' },
-        { installmentNumber: 2, dueDate: '2026-02-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
-        { installmentNumber: 3, dueDate: '2026-03-10', totalAmount: ot.monthlyRent, status: 'PENDIENTE' },
-      ],
-    }));
-  }, [contracts]);
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -850,254 +1089,616 @@ export default function AlquileresPage() {
       {/* TAB 1: ALQUILER DE PUESTOS */}
       {activeTab === 'ALQUILERES' && (
         <div className="space-y-4">
-          {/* Contracts Table */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-              <h2 className="text-sm font-black uppercase text-slate-800 flex items-center gap-2">
-                <Store className="w-4 h-4 text-emerald-600" />
-                Padrón Oficial de Contratos de Arrendamiento
-              </h2>
+          {/* KPI Cards de Resumen General */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Total Contratos</span>
+              <p className="text-2xl font-black text-slate-800 font-mono mt-1">{rentalStats.totalContracts}</p>
+              <span className="text-[10px] text-emerald-600 font-bold">{rentalStats.upToDateCount} al día</span>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Total Recaudado</span>
+              <p className="text-2xl font-black text-emerald-700 font-mono mt-1">S/ {rentalStats.totalPaid.toFixed(2)}</p>
+              <span className="text-[10px] text-slate-400 font-bold">Cuotas canceladas</span>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Saldo por Cobrar</span>
+              <p className="text-2xl font-black text-rose-600 font-mono mt-1">S/ {rentalStats.totalDebt.toFixed(2)}</p>
+              <span className="text-[10px] text-rose-500 font-bold">{rentalStats.withPendingCount} con cuotas pendientes</span>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Cuota Masiva Actual</span>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-xl font-black text-emerald-800">Cuota N° {bulkInstallmentNumber}</span>
+                <span className="text-xs font-bold text-slate-500 font-mono">
+                  {contracts.filter((c: any) => {
+                    const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                    return inst?.status === 'PAGADO';
+                  }).length} / {contracts.length} pagaron
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold">Cobranza mensual programada</span>
+            </div>
+          </div>
+
+          {/* BARRA DE FILTROS GENERALES DE FECHAS, PERIODOS Y CRONOGRAMA */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-xs font-black uppercase text-slate-800 tracking-tight">
+                  Filtros Generales de Períodos y Fechas de Contratos
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  {filteredContracts.length} de {displayContracts.length} Contratos
+                </span>
+              </div>
+
+              {/* Selector de Modo de Vista */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('PADRON')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                    viewMode === 'PADRON'
+                      ? 'bg-emerald-700 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Padrón & Cronograma</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('CUADRICULA')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
+                    viewMode === 'CUADRICULA'
+                      ? 'bg-emerald-700 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                  }`}
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Cuadrícula Matriz Mensual</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+              {/* Buscador */}
               <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Buscar Inquilino / Puesto</label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Nombre, DNI, puesto..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Año */}
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Año de Contrato</label>
+                <select
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
+                >
+                  <option value="ALL">Todos los Años</option>
+                  <option value="2026">Año 2026</option>
+                  <option value="2025">Año 2025</option>
+                </select>
+              </div>
+
+              {/* Mes del Cronograma */}
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Mes del Cronograma</label>
+                <select
+                  value={filterPeriodMonth}
+                  onChange={(e) => setFilterPeriodMonth(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
+                >
+                  <option value="ALL">Todos los Meses / Cuotas</option>
+                  <option value="2026-01">Enero 2026 (Cuota 1)</option>
+                  <option value="2026-02">Febrero 2026 (Cuota 2)</option>
+                  <option value="2026-03">Marzo 2026 (Cuota 3)</option>
+                  <option value="2026-04">Abril 2026 (Cuota 4)</option>
+                  <option value="2026-05">Mayo 2026 (Cuota 5)</option>
+                  <option value="2026-06">Junio 2026 (Cuota 6)</option>
+                </select>
+              </div>
+
+              {/* Inicio Contrato Desde */}
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Inicio Contrato Desde</label>
                 <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar inquilino o puesto..."
-                  className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none w-56"
+                  type="date"
+                  value={dateRangeFrom}
+                  onChange={(e) => setDateRangeFrom(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
                 />
               </div>
-            </div>
 
-            {/* Barra de Cobro y Guardado en Masa de Cuotas de Alquiler (Períodos Pasados y Actuales) */}
-            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-inner">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 bg-white border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-900 shadow-sm">
-                  <span>Cuota a Cobrar:</span>
-                  <select
-                    value={bulkInstallmentNumber}
-                    onChange={(e) => {
-                      setBulkInstallmentNumber(Number(e.target.value));
-                      setSelectedContractIds(new Set());
-                    }}
-                    className="bg-transparent font-black text-emerald-900 outline-none cursor-pointer"
-                  >
-                    {[1, 2, 3, 4, 5, 6].map((num) => (
-                      <option key={num} value={num}>
-                        Cuota N° {num}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={selectAllPendingContractsForInstallment}
-                  className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>
-                    Seleccionar Pendientes Cuota {bulkInstallmentNumber} (
-                    {
-                      contracts.filter((c: any) => {
-                        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
-                        return inst ? inst.status !== 'PAGADO' : true;
-                      }).length
-                    }
-                    )
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={deselectAllContracts}
-                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
-                >
-                  Deseleccionar
-                </button>
-
-                {selectedContractIds.size > 0 && (
-                  <span className="text-xs font-black text-emerald-950 bg-emerald-200 px-3 py-1 rounded-xl">
-                    {selectedContractIds.size} contratos seleccionados
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
+              {/* Estado de Pagos */}
+              <div>
+                <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Estado de Cobranza</label>
                 <select
-                  value={bulkPaymentMethod}
-                  onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
-                  className="bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-emerald-900 outline-none"
+                  value={scheduleStatusFilter}
+                  onChange={(e) => setScheduleStatusFilter(e.target.value as any)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700 focus:outline-none"
                 >
-                  <option value="EFECTIVO">💵 En Efectivo</option>
-                  <option value="YAPE">📱 Yape / Digital</option>
+                  <option value="ALL">Todos los Estados</option>
+                  <option value="WITH_PENDING">Con Cuotas Pendientes</option>
+                  <option value="UP_TO_DATE">Al Día (Sin Morosidad)</option>
+                  <option value="FINALIZED">Contratos Finalizados</option>
                 </select>
-
-                <button
-                  type="button"
-                  onClick={handleBulkSaveRentals}
-                  disabled={selectedContractIds.size === 0 || isSavingBulk}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>
-                    {isSavingBulk
-                      ? 'Guardando...'
-                      : `Guardar Cuota ${bulkInstallmentNumber} (${selectedContractIds.size})`}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px]">
-                  <tr>
-                    <th className="p-3 w-10 text-center">
-                      <input
-                        type="checkbox"
-                        checked={
-                          contracts.filter((c: any) => {
-                            const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
-                            return inst ? inst.status !== 'PAGADO' : true;
-                          }).length > 0 &&
-                          contracts
-                            .filter((c: any) => {
-                              const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
-                              return inst ? inst.status !== 'PAGADO' : true;
-                            })
-                            .every((c: any) => selectedContractIds.has(c.id))
-                        }
-                        onChange={(e) => {
-                          if (e.target.checked) selectAllPendingContractsForInstallment();
-                          else deselectAllContracts();
-                        }}
-                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
-                        title="Seleccionar pendientes de la cuota"
-                      />
-                    </th>
-                    <th className="p-3">N° Contrato</th>
-                    <th className="p-3">Inquilino (Arrendatario)</th>
-                    <th className="p-3">Puesto / Espacio</th>
-                    <th className="p-3">Giro Comercial</th>
-                    <th className="p-3 text-right">Canon Mensual</th>
-                    <th className="p-3 text-center">Estado</th>
-                    <th className="p-3 text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {displayContracts.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-slate-50 transition">
-                      <td className="p-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedContractIds.has(c.id)}
-                          onChange={() => toggleSelectContract(c.id)}
-                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
-                        />
-                      </td>
-                      <td className="p-3 font-mono font-black text-emerald-800">
-                        {c.contractNumber}
-                      </td>
-                      <td className="p-3">
-                        <p className="font-bold text-slate-900">{c.tenantName}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">DNI: {c.tenantDni}</p>
-                      </td>
-                      <td className="p-3 font-bold text-slate-700">
-                        Puesto {c.stallCode || 'N/A'}
-                      </td>
-                      <td className="p-3 text-slate-600 text-[11px]">
-                        {c.businessCategory || 'Comercio General'}
-                      </td>
-                      <td className="p-3 font-mono font-black text-right text-emerald-700 text-sm">
-                        S/ {Number(c.monthlyRent).toFixed(2)}
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">
-                          {c.status || 'ACTIVO'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center space-x-1.5">
-                          <button
-                            onClick={() => handleOpenPayModal(c)}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-sm flex items-center space-x-1"
-                          >
-                            <DollarSign className="w-3 h-3" />
-                            <span>Cobrar Cuota</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenHistoryModal(c)}
-                            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition"
-                            title="Ver Historial de Pagos del Inquilino"
-                          >
-                            <Receipt className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenEditModal(c)}
-                            className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition"
-                            title="Editar Datos del Inquilino"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenContractDoc(c.id)}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
-                            title="Ver e Imprimir Contrato"
-                          >
-                            <Printer className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteContract(c)}
-                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition"
-                            title="Rescindir / Eliminar Contrato"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Resumen de Alquiler Cuota: Pagados vs Deudores */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-4">
-                <span className="font-bold text-slate-700">
-                  Cuota N° {bulkInstallmentNumber}:{' '}
-                  <span className="text-emerald-700 font-black">
-                    {
-                      contracts.filter((c: any) => {
-                        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
-                        return inst?.status === 'PAGADO';
-                      }).length
-                    }{' '}
-                    Pagaron
-                  </span>
-                  {' / '}
-                  <span className="text-amber-700 font-black">
-                    {
-                      contracts.filter((c: any) => {
-                        const inst = c.schedule?.find((s: any) => s.installmentNumber === bulkInstallmentNumber);
-                        return inst ? inst.status !== 'PAGADO' : true;
-                      }).length
-                    }{' '}
-                    Pendientes
-                  </span>
-                </span>
-                <span className="text-slate-400">|</span>
-                <span className="font-bold text-slate-700">
-                  Total Contratos Activos: <span className="font-mono font-black text-emerald-800">{contracts.length}</span>
-                </span>
               </div>
             </div>
           </div>
+
+          {/* VISTA 1: PADRÓN Y CRONOGRAMA */}
+          {viewMode === 'PADRON' && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+              {/* Barra de Cobro y Guardado en Masa de Cuota Específica */}
+              <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-inner">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 bg-white border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-900 shadow-sm">
+                    <span>Cuota a Cobrar:</span>
+                    <select
+                      value={bulkInstallmentNumber}
+                      onChange={(e) => {
+                        setBulkInstallmentNumber(Number(e.target.value));
+                        setSelectedContractIds(new Set());
+                      }}
+                      className="bg-transparent font-black text-emerald-900 outline-none cursor-pointer"
+                    >
+                      {[1, 2, 3, 4, 5, 6].map((num) => (
+                        <option key={num} value={num}>
+                          Cuota N° {num}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={selectAllPendingContractsForInstallment}
+                    className="px-3 py-1.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-black transition flex items-center gap-1 shadow-sm"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>
+                      Seleccionar Pendientes Cuota {bulkInstallmentNumber} (
+                      {
+                        filteredContracts.filter((c: any) => {
+                          const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                          return inst ? inst.status !== 'PAGADO' : true;
+                        }).length
+                      }
+                      )
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={deselectAllContracts}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold transition"
+                  >
+                    Deseleccionar
+                  </button>
+
+                  {selectedContractIds.size > 0 && (
+                    <span className="text-xs font-black text-emerald-950 bg-emerald-200 px-3 py-1 rounded-xl">
+                      {selectedContractIds.size} contratos seleccionados
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={bulkPaymentMethod}
+                    onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                    className="bg-white border border-emerald-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-emerald-900 outline-none"
+                  >
+                    <option value="EFECTIVO">💵 En Efectivo</option>
+                    <option value="YAPE">📱 Yape / Digital</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={handleBulkSaveRentals}
+                    disabled={selectedContractIds.size === 0 || isSavingBulk}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow transition"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>
+                      {isSavingBulk
+                        ? 'Guardando...'
+                        : `Guardar Cuota ${bulkInstallmentNumber} (${selectedContractIds.size})`}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabla de Contratos con Cronograma Interactivo */}
+              <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px]">
+                    <tr>
+                      <th className="p-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={
+                            filteredContracts.filter((c: any) => {
+                              const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                              return inst ? inst.status !== 'PAGADO' : true;
+                            }).length > 0 &&
+                            filteredContracts
+                              .filter((c: any) => {
+                                const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                                return inst ? inst.status !== 'PAGADO' : true;
+                              })
+                              .every((c: any) => selectedContractIds.has(c.id))
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) selectAllPendingContractsForInstallment();
+                            else deselectAllContracts();
+                          }}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                          title="Seleccionar pendientes de la cuota"
+                        />
+                      </th>
+                      <th className="p-3">N° Contrato</th>
+                      <th className="p-3">Inquilino (Arrendatario)</th>
+                      <th className="p-3">Puesto</th>
+                      <th className="p-3">Vigencia Contrato</th>
+                      <th className="p-3 text-right">Canon</th>
+                      <th className="p-3 text-center">Cronograma de Pagos (Desde Inicio)</th>
+                      <th className="p-3 text-right">Total Pagado / Saldo</th>
+                      <th className="p-3 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredContracts.map((c: any) => {
+                      const instList = c.installments || c.schedule || [];
+                      const totalPaid = instList.filter((i: any) => i.status === 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
+                      const totalDebt = instList.filter((i: any) => i.status !== 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
+                      const startDateStr = c.startDate ? new Date(c.startDate).toLocaleDateString('es-PE') : '01/01/2026';
+                      const endDateStr = c.endDate ? new Date(c.endDate).toLocaleDateString('es-PE') : '30/06/2026';
+
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50 transition">
+                          <td className="p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedContractIds.has(c.id)}
+                              onChange={() => toggleSelectContract(c.id)}
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                          </td>
+                          <td className="p-3 font-mono font-black text-emerald-800">
+                            {c.contractNumber}
+                          </td>
+                          <td className="p-3">
+                            <p className="font-bold text-slate-900">{c.tenantName}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">DNI: {c.tenantDni}</p>
+                          </td>
+                          <td className="p-3 font-bold text-slate-700">
+                            Puesto {c.stallCode || 'N/A'}
+                          </td>
+                          <td className="p-3 text-slate-600 text-[11px]">
+                            <p className="font-semibold text-slate-800">Desde: {startDateStr}</p>
+                            <p className="text-[10px] text-slate-400">Hasta: {endDateStr} ({c.monthsCount || 6} m)</p>
+                          </td>
+                          <td className="p-3 font-mono font-black text-right text-emerald-700 text-sm">
+                            S/ {Number(c.monthlyRent).toFixed(2)}
+                          </td>
+                          <td className="p-3">
+                            {/* Píldoras interactivas de cuotas */}
+                            <div className="flex flex-wrap items-center justify-center gap-1.5">
+                              {instList.map((inst: any) => {
+                                const isPaid = inst.status === 'PAGADO';
+                                return isPaid ? (
+                                  <button
+                                    key={inst.installmentNumber}
+                                    type="button"
+                                    onClick={() => handlePrintRentalReceipt(c, inst)}
+                                    className="px-2 py-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 rounded text-[10px] font-black transition flex items-center gap-1 shadow-2xs"
+                                    title={`Cuota ${inst.installmentNumber} PAGADA el ${inst.paidAt ? new Date(inst.paidAt).toLocaleDateString('es-PE') : 'S/F'}. Comp: ${inst.receiptNumber || 'S/N'}. Clic para reimprimir ticket.`}
+                                  >
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                    <span>C{inst.installmentNumber} S/{Number(inst.totalAmount).toFixed(0)}</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    key={inst.installmentNumber}
+                                    type="button"
+                                    onClick={() => handleQuickPayInstallment(c, inst.installmentNumber)}
+                                    className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded text-[10px] font-black transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                    title={`Cuota ${inst.installmentNumber} PENDIENTE (Vence: ${inst.dueDate ? new Date(inst.dueDate).toLocaleDateString('es-PE') : 'S/F'}). Clic para registrar cobro.`}
+                                  >
+                                    <Clock className="w-2.5 h-2.5 text-amber-600" />
+                                    <span>C{inst.installmentNumber} S/{Number(inst.totalAmount).toFixed(0)}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <p className="font-mono font-black text-emerald-700 text-xs">S/ {totalPaid.toFixed(2)}</p>
+                            {totalDebt > 0 && (
+                              <p className="text-[10px] font-mono font-bold text-rose-600">Deuda: S/ {totalDebt.toFixed(2)}</p>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center space-x-1.5">
+                              <button
+                                onClick={() => handleOpenPayModal(c)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-sm flex items-center space-x-1"
+                              >
+                                <DollarSign className="w-3 h-3" />
+                                <span>Cobrar</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenHistoryModal(c)}
+                                className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition"
+                                title="Ver Cronograma Oficial e Historial de Pagos"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenEditModal(c)}
+                                className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition"
+                                title="Editar Datos del Inquilino"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenContractDoc(c.id)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                                title="Ver e Imprimir Contrato A4"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteContract(c)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition"
+                                title="Rescindir / Eliminar Contrato"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Resumen de Alquiler Cuota: Pagados vs Deudores */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-4">
+                  <span className="font-bold text-slate-700">
+                    Cuota N° {bulkInstallmentNumber}:{' '}
+                    <span className="text-emerald-700 font-black">
+                      {
+                        filteredContracts.filter((c: any) => {
+                          const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                          return inst?.status === 'PAGADO';
+                        }).length
+                      }{' '}
+                      Pagaron
+                    </span>
+                    {' / '}
+                    <span className="text-amber-700 font-black">
+                      {
+                        filteredContracts.filter((c: any) => {
+                          const inst = (c.installments || c.schedule || []).find((s: any) => s.installmentNumber === bulkInstallmentNumber);
+                          return inst ? inst.status !== 'PAGADO' : true;
+                        }).length
+                      }{' '}
+                      Pendientes
+                    </span>
+                  </span>
+                  <span className="text-slate-400">|</span>
+                  <span className="font-bold text-slate-700">
+                    Total Contratos Mostrados: <span className="font-mono font-black text-emerald-800">{filteredContracts.length}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* VISTA 2: CUADRÍCULA MATRIZ MENSUAL DE CRONOGRAMA */}
+          {viewMode === 'CUADRICULA' && (
+            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h2 className="text-sm font-black uppercase text-slate-800 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-emerald-600" />
+                    Cuadrícula General del Cronograma de Pagos (Mes a Mes)
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    Selecciona casillas pendientes individuales, columnas completas de cuotas o filas de inquilinos para guardar pagos en masa.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllPendingInGrid}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Seleccionar Todas las Pendientes</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearRentalGridSelection}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition"
+                  >
+                    Limpiar Casillas
+                  </button>
+                </div>
+              </div>
+
+              {/* Barra de Consolidación de la Cuadrícula */}
+              {selectedRentalGridCells.size > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-md animate-in fade-in">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-black text-amber-950 bg-amber-200 px-3 py-1.5 rounded-xl border border-amber-300">
+                      {selectedRentalGridCells.size} cuotas seleccionadas: S/ {totalSelectedGridAmount.toFixed(2)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearRentalGridSelection}
+                      className="text-xs text-slate-500 hover:text-slate-700 underline font-bold"
+                    >
+                      Deseleccionar todas
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={bulkPaymentMethod}
+                      onChange={(e) => setBulkPaymentMethod(e.target.value as any)}
+                      className="bg-white border border-amber-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-amber-950 outline-none"
+                    >
+                      <option value="EFECTIVO">💵 En Efectivo</option>
+                      <option value="YAPE">📱 Yape / Digital</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleConsolidatedRentalGridSave}
+                      disabled={isSavingBulk}
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow flex items-center gap-1.5 transition"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>{isSavingBulk ? 'Guardando en BD...' : 'Consolidar y Guardar Pagos en Masa'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Matriz de Inquilinos x Cuotas 1..6 */}
+              <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-black uppercase text-[10px]">
+                    <tr>
+                      <th className="p-3 w-10 text-center">N°</th>
+                      <th className="p-3">Inquilino (Arrendatario)</th>
+                      <th className="p-3 text-center">Puesto</th>
+                      <th className="p-3 text-center">Inicio Contrato</th>
+                      <th className="p-3 text-right">Canon</th>
+                      {[1, 2, 3, 4, 5, 6].map((num) => (
+                        <th
+                          key={num}
+                          onClick={() => toggleColumnCuota(num)}
+                          className="p-3 text-center cursor-pointer hover:bg-emerald-100 transition select-none"
+                          title={`Clic para seleccionar todos los pendientes de la Cuota ${num}`}
+                        >
+                          <div className="flex flex-col items-center">
+                            <span>Cuota {num}</span>
+                            <span className="text-[9px] text-slate-400 font-normal">
+                              {num === 1 ? 'Ene' : num === 2 ? 'Feb' : num === 3 ? 'Mar' : num === 4 ? 'Abr' : num === 5 ? 'May' : 'Jun'} 2026
+                            </span>
+                          </div>
+                        </th>
+                      ))}
+                      <th className="p-3 text-right">Total Pagado</th>
+                      <th className="p-3 text-right">Saldo Deuda</th>
+                      <th className="p-3 text-center">Historial</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredContracts.map((c: any, idx: number) => {
+                      const instList = c.installments || c.schedule || [];
+                      const totalPaid = instList.filter((i: any) => i.status === 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
+                      const totalDebt = instList.filter((i: any) => i.status !== 'PAGADO').reduce((sum: number, i: any) => sum + Number(i.totalAmount), 0);
+
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50/80 transition">
+                          <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                          <td className="p-3">
+                            <p className="font-black text-slate-900">{c.tenantName}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">DNI: {c.tenantDni} • {c.contractNumber}</p>
+                          </td>
+                          <td className="p-3 text-center font-black text-emerald-800">Puesto {c.stallCode}</td>
+                          <td className="p-3 text-center font-mono text-[11px] text-slate-600">
+                            {c.startDate ? new Date(c.startDate).toLocaleDateString('es-PE') : '01/01/2026'}
+                          </td>
+                          <td className="p-3 text-right font-black font-mono text-emerald-700">
+                            S/ {Number(c.monthlyRent).toFixed(2)}
+                          </td>
+                          {[1, 2, 3, 4, 5, 6].map((num) => {
+                            const inst = instList.find((i: any) => i.installmentNumber === num);
+                            const cellKey = `${c.id}-${num}`;
+                            const isSelected = selectedRentalGridCells.has(cellKey);
+                            const isPaid = inst?.status === 'PAGADO';
+
+                            return (
+                              <td
+                                key={num}
+                                onClick={() => {
+                                  if (!isPaid) toggleRentalGridCell(c.id, num);
+                                }}
+                                className={`p-2.5 text-center transition cursor-pointer select-none border-x border-slate-50 ${
+                                  isPaid
+                                    ? 'bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-900'
+                                    : isSelected
+                                    ? 'bg-amber-300 text-amber-950 font-black shadow-inner ring-2 ring-amber-400'
+                                    : 'bg-white hover:bg-amber-50 text-slate-400'
+                                }`}
+                                title={
+                                  isPaid
+                                    ? `Cuota ${num} PAGADA el ${inst.paidAt ? new Date(inst.paidAt).toLocaleDateString('es-PE') : 'S/F'} • Comp: ${inst.receiptNumber || 'S/N'}`
+                                    : `Cuota ${num} PENDIENTE • Clic para seleccionar o cobrar`
+                                }
+                              >
+                                {isPaid ? (
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-black text-[11px] text-emerald-800">✓ S/ {Number(inst.totalAmount).toFixed(0)}</span>
+                                    <span className="text-[8px] font-mono text-emerald-600 truncate max-w-[65px]">{inst.receiptNumber || 'PAGADO'}</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col items-center">
+                                    <span className={`font-bold text-[11px] ${isSelected ? 'text-amber-950 font-black' : 'text-slate-500'}`}>
+                                      {isSelected ? '✓ ' : '⏳ '}S/ {Number(inst?.totalAmount || c.monthlyRent || 150).toFixed(0)}
+                                    </span>
+                                    <span className="text-[8px] text-slate-400 font-bold">{isSelected ? 'Seleccionado' : 'Pendiente'}</span>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td className="p-3 text-right font-black font-mono text-emerald-700">
+                            S/ {totalPaid.toFixed(2)}
+                          </td>
+                          <td className="p-3 text-right font-black font-mono text-rose-600">
+                            S/ {totalDebt.toFixed(2)}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => handleOpenHistoryModal(c)}
+                              className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition"
+                              title="Ver Cronograma Oficial e Historial"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

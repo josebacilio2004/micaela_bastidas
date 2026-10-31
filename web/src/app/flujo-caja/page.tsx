@@ -849,9 +849,13 @@ export default function FlujoCajaPage() {
                         <td className="p-3 text-center">
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                              exp.status === 'PAGADO'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-rose-100 text-rose-800'
+                              exp.status === 'PAGADO' || exp.status === 'TOTALMENTE RECUPERADO'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : exp.status?.includes('DESEMBOLSADO') || exp.status?.includes('AMORTIZACIÓN') || exp.status?.includes('PRORROGADO')
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : exp.status?.includes('MORA') || exp.status === 'ANULADO'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                : 'bg-slate-100 text-slate-700 border border-slate-300'
                             }`}
                           >
                             {exp.status}

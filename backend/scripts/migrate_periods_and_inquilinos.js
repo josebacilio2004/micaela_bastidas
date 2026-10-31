@@ -488,6 +488,64 @@ async function main() {
     console.log(`Pago residual corregido: ${pay.period} (${pay.operationNumber}) -> ${formatted}`);
   }
 
+  // 7. Sincronización de Cuotas Pagadas de Alquiler con la tabla Payment
+  console.log('--> 7. Sincronizando Cuotas de Alquiler Pagadas con la tabla Payment...');
+  const alqConcept = await prisma.paymentConcept.findUnique({ where: { code: 'ALQUILER_INQUILINO' } });
+  if (alqConcept) {
+    const defaultUser = await prisma.user.findFirst({ where: { isActive: true } });
+    const paidInstallments = await prisma.stallRentalInstallment.findMany({
+      where: { status: 'PAGADO' },
+      include: { contract: true },
+    });
+
+    for (const inst of paidInstallments) {
+      const c = inst.contract;
+      const opNumber = inst.receiptNumber || `REC-ALQ-${c.stallCode}-C${inst.installmentNumber}`;
+
+      const existingPay = await prisma.payment.findFirst({
+        where: {
+          OR: [
+            { operationNumber: opNumber },
+            {
+              AND: [
+                { conceptId: alqConcept.id },
+                { notes: { contains: `Cuota ${inst.installmentNumber}` } },
+                { notes: { contains: c.stallCode } },
+              ],
+            },
+          ],
+        },
+      });
+
+      if (!existingPay) {
+        let merchantId = c.merchantId || null;
+        if (!merchantId && c.tenantDni) {
+          const m = await prisma.merchant.findUnique({ where: { dni: c.tenantDni } });
+          if (m) merchantId = m.id;
+        }
+
+        const periodYearMonth = inst.dueDate
+          ? `${new Date(inst.dueDate).getFullYear()}-${String(new Date(inst.dueDate).getMonth() + 1).padStart(2, '0')}`
+          : '2026-01';
+
+        await prisma.payment.create({
+          data: {
+            operationNumber: opNumber,
+            merchantId,
+            conceptId: alqConcept.id,
+            amount: inst.totalAmount,
+            period: `${periodYearMonth} (Cuota ${inst.installmentNumber})`,
+            paymentMethod: inst.paymentMethod || 'EFECTIVO',
+            cashRegisterId: inst.cashRegisterId,
+            collectedById: defaultUser?.id || '',
+            notes: `Alquiler Puesto ${c.stallCode} - Cuota ${inst.installmentNumber}/${c.monthsCount} (${c.tenantName})`,
+            paidAt: inst.paidAt || new Date(),
+          },
+        });
+      }
+    }
+  }
+
   // Resumen final
   const [totalSocios, totalInq, totalAf, totalContracts] = await Promise.all([
     prisma.merchant.count({ where: { merchantType: { code: 'SOCIO' } } }),
